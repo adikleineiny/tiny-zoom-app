@@ -8,7 +8,7 @@ export const WEAPONS = {
   oil:    { icon: '🛢️', name: 'Oil Slick',     tip: 'Dropped behind – racers spin out' },
   zap:    { icon: '⚡', name: 'Electrify',     tip: 'Chain lightning – kills their power' },
   glove:  { icon: '🥊', name: 'Spring Glove',  tip: 'Boing! Punches the racer in front' },
-  bomb:   { icon: '💣', name: 'Sticky Bomb',   tip: 'Sticks on, beeps – bump someone to pass it!' },
+  bomb:   { icon: '💣', name: 'Sticky Bomb',   tip: 'Lobbed behind you – sticks on whoever follows. Bump someone to pass it!' },
   turbo:  { icon: '💨', name: 'Nitro Turbo',   tip: 'Flame boost – ram racers aside' },
   fire:   { icon: '🔥', name: 'Fire Trail',    tip: 'Flamethrower + burning trail behind you' },
 };
@@ -82,7 +82,10 @@ export class Weapons {
         if (!tgt) for (const o of this.others(r)) { const f = this.front(r, o); if (f.cos > 0.3 && f.d < C.rocket.range && f.d < best) { best = f.d; tgt = o; } }
         spawn('rocket', { vx: c * C.rocket.speed, vy: 0, vz: s * C.rocket.speed, life: C.rocket.life, target: tgt, y: r.y + 6 }); break;
       }
-      case 'bomb': spawn('bomb', { vx: c * (C.bomb.throwSpeed + fwd), vy: C.bomb.throwUp, vz: s * (C.bomb.throwSpeed + fwd), life: 5, y: r.y + 8 }); break;
+      case 'bomb': { // v3.4: lobbed BACKWARDS – lands behind the thrower, on whoever is following
+        const bv = fwd * 0.35 - C.bomb.throwSpeed * (C.bomb.backThrow ?? 0.6);
+        spawn('bomb', { x: r.x - c * (r.V.radius + 6), z: r.z - s * (r.V.radius + 6), vx: c * bv + r.vx * 0, vy: C.bomb.throwUp * 0.8, vz: s * bv, life: 5, y: r.y + 8, back: true }); break;
+      }
       case 'shock': {
         const Rr = C.shock.radius;
         for (const o of this.others(r)) {
@@ -137,6 +140,7 @@ export class Weapons {
         if (o.type === 'drone') { if (oy < C.fire.droneMaxAlt) S.hit(o, { up: C.fire.droneHeat / 0.6, spin: 0.35, slow: 0.85, by: h.owner, kind: 'fire' }); }
         else if (oy < 8) S.hit(o, { spin: C.fire.spin, slow: C.fire.slow, up: 50, by: h.owner, kind: 'fire' });
       } else if (h.kind === 'bomb') {
+        if (o === h.owner && h.age < (C.bomb.ownerSafe ?? 2.5)) continue;
         if (h.age > 0.3 && d < 9 + o.V.radius * 0.5 && oy < 12 && !o.bomb) { o.bomb = { t: C.bomb.fuse * 0.8, passCD: C.bomb.passCooldown, owner: h.owner }; S.emit({ type: 'bombStick', r: o }); return true; }
       }
     }
@@ -156,7 +160,7 @@ export class Weapons {
   }
   hitRacer(p, rad) {
     for (const o of this.sim.racers) {
-      if (o === p.owner && p.age < 0.5) continue;
+      if (o === p.owner && (p.age < 0.5 || p.kind === 'bomb')) continue; // a thrown bomb never sticks to its thrower
       if (Math.abs(o.x - p.x) < rad + o.V.radius && Math.abs(o.z - p.z) < rad + o.V.radius && Math.hypot(o.x - p.x, o.z - p.z) < rad + o.V.radius && p.y > o.y - 3 && p.y < o.y + o.V.height + 6) return o;
     }
     return null;
@@ -226,7 +230,7 @@ export class Weapons {
     switch (w) {
       case 'ball': go ||= inFront(220, 0.93); break;
       case 'rocket': go ||= os.some(o => { const dp = o.progress - r.progress; return dp > 10 && dp < C.rocket.range * 0.7; }); break;
-      case 'bomb': go ||= inFront(160, 0.9); break;
+      case 'bomb': go ||= behind(140); break; // thrown backwards → fire when someone is close behind
       case 'shock': go ||= near(C.shock.radius * 0.75); break;
       case 'zap': go ||= near(C.zap.range * 0.85); break;
       case 'glove': go ||= inFront(C.glove.reach, 0.85); break;

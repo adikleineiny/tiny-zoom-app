@@ -88,6 +88,8 @@ function goFullscreen() {
 }
 $('btnStart').addEventListener('click', () => { goFullscreen(); startRace(selected); });
 $('btnHelp').addEventListener('click', () => $('help').classList.remove('hidden'));
+for (const id of ['btnControls', 'btnControls2']) $(id)?.addEventListener('click', e => { e.preventDefault(); input.cycleMode(); });
+input.setType(input.type);
 $('btnHelpClose').addEventListener('click', () => $('help').classList.add('hidden'));
 const pause = () => { input.releaseAll(); if (state === 'race' || state === 'countdown') { state = 'paused:' + state; $('pause').classList.remove('hidden'); } };
 const resume = () => { input.releaseAll(); if (state.startsWith('paused:')) { state = state.slice(7); $('pause').classList.add('hidden'); } };
@@ -176,7 +178,9 @@ const mmBase = document.createElement('canvas'); mmBase.width = MW; mmBase.heigh
 }
 function drawMinimap() {
   mctx.clearRect(0, 0, MW, MH); mctx.drawImage(mmBase, 0, 0);
-  for (const p of track.pads) { mctx.fillStyle = '#ff9f1c'; mctx.fillRect(mmX(p.x) - 2.5, mmZ(p.z) - 2.5, 5, 5); }
+  const flyer = player && player.type !== 'car';
+  if (!flyer) for (const p of track.pads) { mctx.fillStyle = '#ff9f1c'; mctx.fillRect(mmX(p.x) - 2.5, mmZ(p.z) - 2.5, 5, 5); }
+  else for (const p of track.rings) { mctx.strokeStyle = '#ff9f1c'; mctx.lineWidth = 2; mctx.beginPath(); mctx.arc(mmX(p.x), mmZ(p.z), 3.5, 0, 7); mctx.stroke(); mctx.strokeStyle = '#3ff6ff'; mctx.lineWidth = 1; mctx.beginPath(); mctx.arc(mmX(p.x), mmZ(p.z), 1.8, 0, 7); mctx.stroke(); }
   for (const r of sim.racers) { mctx.fillStyle = '#' + r.color.toString(16).padStart(6, '0'); mctx.beginPath(); mctx.arc(mmX(r.x), mmZ(r.z), r.isPlayer ? 4.5 : 3.2, 0, 7); mctx.fill(); if (r.isPlayer) { mctx.strokeStyle = '#fff'; mctx.lineWidth = 2; mctx.stroke(); } }
 }
 function updateSlot(dt) {
@@ -222,7 +226,7 @@ function updateHUD(dt) {
   else if (player.rescueT > 0) { msg = '🎣 Back on track…'; ok = true; }
   else if (state === 'race' && sim.stuckLevel(player) > 0.4) msg = 'Stuck? Rescue coming… (↺ = reset now)';
   else if (player.wrongWayT > 1) msg = 'Wrong way!';
-  else if (player.turboT > 0 && player.padCD > 0) { msg = '🚀 TURBO PAD!'; ok = true; }
+  else if (player.turboT > 0 && player.padCD > 0) { msg = player.type === 'car' ? '🚀 TURBO PAD!' : '🚀 TURBO RING!'; ok = true; }
   else if (player.type === 'drone' && player.y - (player.groundY || 0) < 3 && state === 'race' && !(CONFIG.flyerAssist?.autoAltitude && CONFIG.flyerAssist.level > 0) && player.spool >= 1 && player.lapsDone === 0 && sim.t < 6) { msg = 'Left stick up to take off'; ok = true; }
   w.textContent = msg; w.classList.toggle('ok', ok);
   drawMinimap();
@@ -257,7 +261,7 @@ function frame(now) {
       if (countdownT <= 0.2 && !sim.running) { sim.running = true; state = 'race'; }
     }
     if (state === 'race' && countdownT < -0.8) $('countdown').textContent = ''; else if (state === 'race') countdownT -= dt;
-    if (player && !player.autopilot && !player.finished) input.read(player.input); else input.read({});
+    if (player && !player.autopilot && !player.finished) input.read(player.input, { cam: camHeading, heading: player.heading }); else input.read({});
     acc += dt * timeScale; let n = 0;
     while (acc >= H && n < 40) { sim.step(H); acc -= H; n++; }
     if (acc > H) acc = 0;
@@ -285,7 +289,7 @@ window.__rc = {
   sim, track, CONFIG, scene, get camera() { return camera; }, get calls() { return renderer.info.render.calls; }, get state() { return state; }, get player() { return player; },
   startRace, toMenu, setTimeScale: s => (timeScale = s), weapons, WEAPONS,
   setCam(pos, look) { camOverride = pos ? [pos, look] : null; },
-  input, rescue: (r = player, why) => sim.rescue(r, why),
+  input, world, rescue: (r = player, why) => sim.rescue(r, why),
   give(w, r = player) { weapons.give(r, w); }, fire(r = player) { return weapons.use(r); },
   // fast headless race simulation (no rendering) for balance testing
   simulateRace(type = 'racecar', maxSeconds = 400, opts = {}) {

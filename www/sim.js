@@ -44,7 +44,8 @@ export class AIDriver {
     let vt = prof[(r.idx + Math.round((8 + sp * 0.25) / ds)) % N] * this.skill;
     let targetAlt = Math.min(A.cruiseAltitude + this.altOff + T.gndAhead[r.idx], T.droneSafeAlt[r.idx]);
     // turbo pads: steer onto the next pad when it's close ahead (every vehicle type, same rule)
-    for (const p of T.pads) { const ah = T.wrapS(p.s - r.s); if (ah > -10 && ah < 90) { const w = Math.max(0, 1 - ah / 70); tx = tx * (1 - w) + p.x * w; tz = tz * (1 - w) + p.z * w; targetAlt = Math.min(targetAlt, p.y + CONFIG.turboPads.flyHeight); break; } }
+    // v3.4: ground vehicles aim for pads, flyers aim through the floating turbo rings (same rule)
+    for (const p of (r.type === 'car' ? T.pads : T.rings)) { const ah = T.wrapS(p.s - r.s); if (ah > -10 && ah < 90) { const w = Math.max(0, 1 - ah / 70); tx = tx * (1 - w) + p.x * w; tz = tz * (1 - w) + p.z * w; if (r.type !== 'car') targetAlt = p.ry - r.V.height * 0.5; break; } }
     let desired = Math.atan2(tz - r.z, tx - r.x);
     if (r.type === 'drone' && sp > 15) { const va = Math.atan2(r.vz, r.vx); desired += clamp(wrapA(desired - va), -0.6, 0.6) * 0.6; }
     const err = wrapA(desired - r.heading);
@@ -266,7 +267,8 @@ export class Sim {
       r.drifting = ctl && Math.abs(steer) > c.driftThreshold && vF > c.topSpeed * c.driftMinSpeed;
       let grip = c.grip * sf.grip * (r.drifting ? c.driftGrip : 1); if (r.spinT > 0) grip = 1.5;
       vL *= Math.exp(-grip * dt);
-      const steerAmt = Math.min(1, Math.abs(vF) / c.steerSpeedRef) * (1 - c.highSpeedSteerLoss * Math.min(1, Math.abs(vF) / c.topSpeed));
+      const steerAmt = Math.max(Math.min(1, Math.abs(vF) / c.steerSpeedRef), Math.min(1, Math.abs(vF) / 4) * (c.lowSpeedSteer ?? 0.6)) * // v3.4: never sluggish at low speed
+         (1 - c.highSpeedSteerLoss * Math.min(1, Math.abs(vF) / c.topSpeed));
       r.heading += steer * c.steerRate * steerAmt * (r.drifting ? c.driftSteerBoost : 1) * Math.sign(vF) * dt;
       if (ctl && inp.jump && r.jumpCD <= 0) { r.vy = c.jumpV; r.grounded = false; r.jumpCD = c.jumpCooldown + 0.2; this.emit({ type: 'jump', r }); }
     } else {
@@ -324,7 +326,7 @@ export class Sim {
       steerIn *= 1 - FA.yawExpo * as * (1 - Math.abs(steerIn));
       const safe = T.droneSafeAlt[r.idx];
       let want = Math.min(T.gndAhead[r.idx] + FA.cruiseAlt, safe);
-      for (const p of T.pads) { const ah = T.wrapS(p.s - r.s); if (ah > -10 && ah < 90) want = Math.min(want, p.y + CONFIG.turboPads.flyHeight); } // dip to catch turbo pads
+      for (const p of T.rings) { const ah = T.wrapS(p.s - r.s); if (ah > -10 && ah < 90) { want = p.ry - r.V.height * 0.5; break; } } // line up with the next turbo ring
       if (FA.autoAltitude && Math.abs(altIn) < 0.12) { if (this.running) altIn = clamp(((want - r.y) / 7 - r.vy / 50) * as + altIn * (1 - as), -1, 1); }
       else if (FA.ceilingGuard && altIn > 0 && r.y > safe - 3) altIn = Math.min(altIn, clamp((safe - r.y) / 6, -1, 1) * as + altIn * (1 - as));
       r.assistAlt = want;
@@ -441,11 +443,19 @@ export class Sim {
     r.progress += T.wrapS(sNew - sPrev);
     r.idx = pr.idx; r.s = sNew; r.lat = pr.lat;
     r.section = T.section[r.idx]; if (this.running && !r.finished) { r.secT = r.secT || {}; r.secT[r.section] = (r.secT[r.section] || 0) + dt; r.maxSp = r.maxSp||{}; r.maxSp[r.section] = Math.max(r.maxSp[r.section]||0, r.speed); } r.surface = T.surfaceAt(r.x, r.z, r.idx);
-    // turbo pads: ground vehicles AND flyers (within TP.maxHeight above the pad) get the same short, strong boost
+    // turbo pads (ground vehicles only) / v3.4 floating turbo rings (drone + helicopter only): same short, strong boost
     r.onPad = false; if (r.padCD > 0) r.padCD -= dt;
-    for (const p of T.pads) if (Math.hypot(p.x - r.x, p.z - r.z) < TP.radius && r.y - p.y < TP.maxHeight && r.y > p.y - 3) {
-      r.onPad = true;
-      if (this.running && r.padCD <= 0 && r.rescueT <= 0) { r.turboT = Math.max(r.turboT, TP.time); r.padCD = TP.cooldown; r.padHits++; this.emit({ type: 'turboPad', r, pad: p }); }
+    if (r.type === 'car') {
+      for (const p of T.pads) if (Math.hypot(p.x - r.x, p.z - r.z) < TP.radius && r.y - p.y < 40 && r.y > p.y - 3) {
+        r.onPad = true;
+        if (this.running && r.padCD <= 0 && r.rescueT <= 0) { r.turboT = Math.max(r.turboT, TP.time); r.padCD = TP.cooldown; r.padHits++; this.emit({ type: 'turboPad', r, pad: p }); }
+      }
+    } else {
+      const cy = r.y + r.V.height * 0.5;
+      for (const p of T.rings) if (Math.hypot(p.x - r.x, p.z - r.z) < TP.ringR + 2 && Math.abs(cy - p.ry) < TP.ringR + (TP.ringSlack ?? 0)) {
+        r.onPad = true;
+        if (this.running && r.padCD <= 0 && r.rescueT <= 0) { r.turboT = Math.max(r.turboT, TP.time); r.padCD = TP.cooldown; r.padHits++; this.emit({ type: 'turboPad', r, pad: p, ring: true }); }
+      }
     }
     // wrong way
     const dot = Math.cos(r.heading) * T.tx[r.idx] + Math.sin(r.heading) * T.tz[r.idx];

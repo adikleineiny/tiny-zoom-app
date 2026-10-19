@@ -135,7 +135,9 @@ export const CONFIG = {
   // ===== Turbo pads (v3.3: replaced the old charging pads) =====
   turboPads: {
     radius: 14,           // trigger radius (cm), pad is drawn 2·radius long
-    maxHeight: 40,        // flyers within this height above the pad get boosted too (assist cruise height 22, AI 30)
+    ringHeight: 22,       // v3.4: flyers get floating rings instead of pads; ring centre this high above the pad (cruise height)
+    ringSlack: 0,         // extra vertical tolerance (forgiving: brushing the rim still counts)
+    ringR: 16,            // ring opening radius (cm); pass within it (and within `radius` horizontally) for the boost
     time: 0.9,            // s of boost (short and strong)
     cooldown: 1.2,
     flyHeight: 18,        // flyer assist / AI dips to this height over an upcoming pad        // s before the same racer can take another pad
@@ -168,7 +170,7 @@ export const CONFIG = {
     oil:    { radius: 13, life: 12, spin: 0.9, slow: 0.6, maxAlt: 10 },  // drones skimming below maxAlt slip too
     zap:    { range: 150, chainRange: 100, chainMax: 3, stun: 0.9, slow: 0.4, droneDrop: 60 },
     glove:  { reach: 50, cone: 0.75, knock: 300, up: 110, spin: 0.6, slow: 0.5, time: 0.42 },
-    bomb:   { fuse: 3.2, throwSpeed: 170, throwUp: 85, radius: 42, up: 240, knock: 170, tumble: 1.1, slow: 0.35, passCooldown: 0.6, mineLife: 6 },
+    bomb:   { fuse: 3.2, throwSpeed: 170, throwUp: 85, radius: 42, up: 240, knock: 170, tumble: 1.1, slow: 0.35, passCooldown: 0.6, mineLife: 6, backThrow: 0.6, ownerSafe: 2.5 },
     turbo:  { time: 1.7, speedMul: 1.55, accelMul: 2.6, ramKnock: 230, ramUp: 100, droneThrustMul: 1.55 },
     fire:   { time: 1.6, patchEvery: 0.06, patchLife: 2.6, patchRadius: 8, coneReach: 32, spin: 0.7, slow: 0.65, droneHeat: 110, droneMaxAlt: 45 },
   },

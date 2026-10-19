@@ -1,5 +1,6 @@
 // RC-transmitter style twin sticks + keyboard + JUMP / FIRE buttons.
-// Left stick:  vertical = throttle (ground) / altitude (flyer).  Right stick: horizontal = steering / yaw, vertical = forward/back pitch (flyer).
+// v3.4: fully analog 360° sticks. Default 'One stick' mode: left stick x = steer/yaw, y = throttle/forward (diagonals blend);
+// right stick does the same (flyers hold altitude automatically). 'Point & go' and 'Classic RC' modes in Controls.
 //
 // Touch robustness (iOS Safari): touches are tracked by Touch.identifier with Touch Events (pointer events only for
 // mouse / pen, or touch on browsers without Touch Events). Every touchstart / touchend / touchcancel re-checks the full
@@ -150,25 +151,61 @@ export class Input {
       if (!this.inGame() && now - st.t > WATCHDOG_MS) this.releaseStick(st);
     }
   }
+  // v3.4 control modes: 'stick' = one analog stick drives (default), 'point' = point where you want to go, 'classic' = RC transmitter
+  static MODES = { stick: 'One stick', point: 'Point & go', classic: 'Classic RC' };
+  get mode() { if (!this._mode) { let m = null; try { m = localStorage.getItem('tz.controls'); } catch (_) {} this._mode = Input.MODES[m] ? m : 'stick'; } return this._mode; }
+  set mode(m) { this._mode = Input.MODES[m] ? m : 'stick'; try { localStorage.setItem('tz.controls', this._mode); } catch (_) {} this.setType(this.type); }
+  cycleMode() { const k = Object.keys(Input.MODES); this.mode = k[(k.indexOf(this.mode) + 1) % k.length]; return this.mode; }
   setType(t) {
-    this.type = t;
-    document.getElementById('lblL').textContent = t === 'car' ? 'Throttle / Brake' : 'Altitude ↑↓';
-    document.getElementById('lblR').textContent = t === 'car' ? 'Steer ⟷' : 'Yaw ⟷ · Forward ↑↓';
-    const lj = document.getElementById('lblJump'); if (lj) lj.textContent = t === 'car' ? 'JUMP' : 'HOP';
+    this.type = t; const m = this.mode, car = t === 'car';
+    const L = m === 'classic' ? (car ? 'Throttle / Brake' : 'Altitude ↑↓') : m === 'point' ? (car ? 'Drive: point where to go' : 'Fly: point where to go') : (car ? 'Drive ✥ (steer + gas)' : 'Fly ✥ (yaw + forward)');
+    const R = m === 'classic' ? (car ? 'Steer ⟷' : 'Yaw ⟷ · Forward ↑↓') : (car ? 'Steer ⟷ · Gas ↑↓' : (m === 'point' ? 'Yaw ⟷ · Altitude ↑↓' : 'Yaw ⟷ · Forward ↑↓'));
+    const el = id => document.getElementById(id);
+    if (el('lblL')) el('lblL').textContent = L; if (el('lblR')) el('lblR').textContent = R;
+    const lj = el('lblJump'); if (lj) lj.textContent = car ? 'JUMP' : 'HOP';
+    for (const b of document.querySelectorAll('.btnControls')) b.textContent = '🎮 Controls: ' + Input.MODES[m];
   }
-  get throttleHeld() { const L = this.sticks.L, k = this.keys; return Math.abs(L.y) > 0.3 || k.has('KeyW') || k.has('ArrowUp') || k.has('KeyS') || k.has('ArrowDown'); }
-  read(out) {
+  get throttleHeld() { const L = this.sticks.L, R = this.sticks.R, k = this.keys; return Math.hypot(L.x, L.y) > 0.3 || Math.abs(R.y) > 0.3 || k.has('KeyW') || k.has('ArrowUp') || k.has('KeyS') || k.has('ArrowDown'); }
+  // radial deadzone (9%) rescaled to 0..1, plus a gentle response curve (fine control near centre, full lock at the edge)
+  static shape(x, y, dz = 0.09) {
+    const m = Math.hypot(x, y); if (m <= dz) return [0, 0];
+    let a = Math.min(1, (m - dz) / (1 - dz)); a = 0.55 * a + 0.45 * a * a;
+    return [x / m * a, y / m * a];
+  }
+  // ctx (optional): { cam, heading } in radians → used by 'point' mode
+  read(out, ctx) {
     this.watchdog();
-    const k = this.keys, L = this.sticks.L, R = this.sticks.R; const dz = v => Math.abs(v) < 0.08 ? 0 : v;
+    const now = performance.now(), dt = Math.min(0.1, Math.max(0, (now - (this._lt || now)) / 1000)); this._lt = now;
+    const k = this.keys, mode = this.mode, car = this.type === 'car';
+    const [lx, ly] = Input.shape(this.sticks.L.x, this.sticks.L.y), [rx, ry] = Input.shape(this.sticks.R.x, this.sticks.R.y);
     const kUp = k.has('KeyW') || k.has('ArrowUp'), kDn = k.has('KeyS') || k.has('ArrowDown');
     const kL = k.has('KeyA') || k.has('ArrowLeft'), kR = k.has('KeyD') || k.has('ArrowRight');
     const kRise = k.has('Space') || k.has('KeyE'), kSink = k.has('ShiftLeft') || k.has('ShiftRight') || k.has('KeyQ');
     const kb = (a, b) => (a ? 1 : 0) - (b ? 1 : 0);
-    if (this.type === 'car') {
-      out.thr = clamp1(dz(L.y) + kb(kUp, kDn)); out.steer = clamp1(dz(R.x) + kb(kR, kL)); out.alt = 0; out.pitch = 0;
+    // keyboard: every key combination is independent (W+A = gas + left); digital steer ramps in quickly instead of snapping
+    const ks = this._ks = this._ks || { steer: 0 }; const kt = kb(kR, kL);
+    ks.steer = kt === 0 ? 0 : (Math.sign(kt) !== Math.sign(ks.steer) ? 0.35 * kt : clamp1(ks.steer + kt * 7 * dt));
+    let steer, fwd, alt = 0;
+    if (mode === 'classic') { // original transmitter layout
+      if (car) { fwd = ly; steer = rx; } else { alt = ly; steer = rx; fwd = ry; }
+    } else if (mode === 'point' && ctx && (lx || ly)) { // left stick = direction to go (relative to the camera); push = how fast
+      const mag = Math.min(1, Math.hypot(lx, ly)), target = (ctx.cam ?? ctx.heading ?? 0) + Math.atan2(lx, ly);
+      let err = target - (ctx.heading ?? 0); err = Math.atan2(Math.sin(err), Math.cos(err));
+      steer = clamp1(err * 2.2) + rx; fwd = mag * (Math.abs(err) > 2.0 ? 0.6 : 1) + (car ? ry : 0);
+      if (!car) alt = ry;
+    } else { // 'stick': one stick does both – a diagonal push steers and throttles at the same time; right stick helps
+      steer = lx + rx;
+      fwd = ly + ry; // flyers: auto altitude hold does the height (Classic RC for manual altitude)
+    }
+    // tiny low-pass on touch input: no jitter, still instant (~35 ms)
+    const sm = this._sm = this._sm || { steer: 0, fwd: 0, alt: 0 }, a = dt > 0 ? 1 - Math.exp(-dt / 0.035) : 1;
+    sm.steer += (clamp1(steer) - sm.steer) * a; sm.fwd += (clamp1(fwd) - sm.fwd) * a; sm.alt += (clamp1(alt) - sm.alt) * a;
+    for (const q of ['steer', 'fwd', 'alt']) if (Math.abs(sm[q]) < 1e-3) sm[q] = 0;
+    if (car) {
+      out.thr = clamp1(sm.fwd + kb(kUp, kDn)); out.steer = clamp1(sm.steer + ks.steer); out.alt = 0; out.pitch = 0;
       out.jump = this.jumpHeld || k.has('Space');
     } else {
-      out.alt = clamp1(dz(L.y) + kb(kRise, kSink)); out.steer = clamp1(dz(R.x) + kb(kR, kL)); out.pitch = clamp1(dz(R.y) + kb(kUp, kDn)); out.thr = 0;
+      out.alt = clamp1(sm.alt + kb(kRise, kSink)); out.steer = clamp1(sm.steer + ks.steer); out.pitch = clamp1(sm.fwd + kb(kUp, kDn)); out.thr = 0;
       out.jump = this.jumpHeld;
     }
     if (this.fireQueued) { out.fire = true; this.fireQueued = false; }
@@ -177,9 +214,10 @@ export class Input {
   }
   renderSticks() {
     const L = this.sticks.L, R = this.sticks.R; if (!this.elL) return;
-    const kx = this.type === 'car' ? 0 : L.x;
+    const classic = this.mode === 'classic', car = this.type === 'car';
+    const kx = classic && car ? 0 : L.x;
     this.elL.style.setProperty('--kx', (kx * 32) + 'px'); this.elL.style.setProperty('--ky', (-L.y * 32) + 'px');
-    this.elR.style.setProperty('--kx', (R.x * 32) + 'px'); this.elR.style.setProperty('--ky', (this.type === 'car' ? 0 : -R.y * 32) + 'px');
+    this.elR.style.setProperty('--kx', (R.x * 32) + 'px'); this.elR.style.setProperty('--ky', (classic && car ? 0 : -R.y * 32) + 'px');
     this.elL.classList.toggle('held', L.id !== null); this.elR.classList.toggle('held', R.id !== null);
   }
 }

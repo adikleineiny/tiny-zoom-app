@@ -219,6 +219,10 @@ export class Track {
     const N = this.N, ds = this.ds, A = CONFIG.ai, V = CONFIG.vehicles;
     for (let i = 0; i < N; i++) this.ceil[i] = this.ceilingAt(this.px[i], this.pz[i]);
     for (const g of this.gates) for (let k = -2; k <= 2; k++) { const i = (g.i + k + N) % N; this.ceil[i] = Math.min(this.ceil[i], g.h); }
+    // v3.4 floating turbo rings for flyers: one above each pad, at flyer cruise height (kept under low ceilings / gates)
+    const TP = CONFIG.turboPads;
+    this.rings = this.pads.map(p => ({ i: p.i, s: p.s, x: p.x, z: p.z, dir: p.dir, why: p.why, gy: p.y,
+      ry: Math.max(p.y + TP.ringR * 0.8, Math.min(p.y + TP.ringHeight, this.ceil[p.i] - TP.ringR - 3)) }));
     // safe drone altitude: look ahead ~3m
     const eff = new Float32Array(N);
     for (let i = 0; i < N; i++) eff[i] = this.ceil[i] - V.drone.height - 8;

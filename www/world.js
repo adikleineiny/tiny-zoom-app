@@ -369,8 +369,27 @@ export function buildWorld(scene, track, renderer) {
   scene.add(B.mesh(lam(0xffffff, { vertexColors: true })));
   scene.add(GLOW.mesh(new THREE.MeshBasicMaterial({ vertexColors: true })));
 
+  // v3.4 floating turbo rings (drone + helicopter): orange ring with a cyan inner glow ring, see-through cyan
+  // shimmer disc and 4 chevron fins pointing along the track. Built on first update (track.rings exist after finalize()).
+  let flyRings = null;
+  const buildRings = () => {
+    flyRings = []; const R = TPC.ringR;
+    const orange = new THREE.MeshBasicMaterial({ color: 0xff8a00 }), cyan = new THREE.MeshBasicMaterial({ color: 0x3ff6ff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+    for (const p of track.rings || []) {
+      const grp = new THREE.Group(); grp.position.set(p.x, p.ry, p.z); grp.rotation.y = Math.PI / 2 - p.dir;
+      grp.add(new THREE.Mesh(new THREE.TorusGeometry(R, 1.5, 10, 40), orange));
+      const inner = new THREE.Mesh(new THREE.TorusGeometry(R - 2.2, 0.6, 8, 40), cyan); grp.add(inner);
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(R - 2.6, 32), new THREE.MeshBasicMaterial({ color: 0x3ff6ff, transparent: true, opacity: 0.12, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false })); grp.add(disc);
+      for (let k = 0; k < 4; k++) { const f = new THREE.Mesh(new THREE.ConeGeometry(1.4, 3.5, 4), orange); const a = k * Math.PI / 2 + Math.PI / 4; f.position.set(Math.cos(a) * (R + 2.2), Math.sin(a) * (R + 2.2), 0); f.rotation.x = Math.PI / 2; grp.add(f); }
+      grp.userData = { inner, disc }; grp.name = 'turboRing'; scene.add(grp); flyRings.push(grp);
+    }
+  };
+
   return {
+    rings: () => flyRings,
     update(t, racers) {
+      if (!flyRings && track.rings) buildRings();
+      if (flyRings) flyRings.forEach((g, k) => { const q = 0.5 + 0.5 * Math.sin(t * 7 + k); g.userData.inner.scale.setScalar(0.96 + 0.06 * q); g.userData.disc.material.opacity = 0.08 + 0.14 * q; g.userData.inner.rotation.z = t * 1.5; });
       let near = 0;
       for (const r of racers) { const d = Math.hypot(r.x - 400, r.z - 900); if (d < 22 && Math.abs(r.x - 400) < 16) near = Math.max(near, (1 - d / 22)) * Math.sign(r.vz || 1); }
       const target = -near * 1.3; flapPivot.rotation.x += (target - flapPivot.rotation.x) * 0.25;
