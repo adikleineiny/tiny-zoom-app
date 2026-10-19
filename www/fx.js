@@ -1,14 +1,25 @@
-// Visuals for '?' boxes, projectiles, hazards and hit effects. Reads sim/weapons state + sim.events each frame.
+// Visuals for RC parts crates (mystery boxes), projectiles, hazards and hit effects. Reads sim/weapons state + sim.events each frame.
 import * as THREE from './three.module.min.js';
 import { CONFIG } from './config.js';
 
 function tex(w, h, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; }
 const SOFT = tex(64, 64, (g) => { const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,.75)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); });
 const STAR = tex(64, 64, (g) => { g.fillStyle = '#fff'; g.beginPath(); for (let k = 0; k < 10; k++) { const a = k * Math.PI / 5 - Math.PI / 2, r = k % 2 ? 12 : 30; g.lineTo(32 + Math.cos(a) * r, 32 + Math.sin(a) * r); } g.fill(); });
+// v3.3: RC parts crate (orange/black, hazard edge stripes) with an original bolt-in-a-gear emblem
+export function drawBoltGear(g, cx, cy, R, col = '#111', bolt = '#ffd23f') {
+  const n = 8; g.fillStyle = col; g.beginPath();
+  for (let k = 0; k < n * 4; k++) { const a = (k / (n * 4)) * Math.PI * 2, r = (k % 4 < 2) ? R : R * 0.8; g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); }
+  g.closePath(); g.fill(); g.fillStyle = '#ff7b00'; g.beginPath(); g.arc(cx, cy, R * 0.6, 0, 7); g.fill();
+  const u = R / 50; g.fillStyle = bolt; g.strokeStyle = col; g.lineWidth = 3 * u; g.beginPath();
+  g.moveTo(cx + 8 * u, cy - 26 * u); g.lineTo(cx - 14 * u, cy + 4 * u); g.lineTo(cx - 1 * u, cy + 4 * u); g.lineTo(cx - 8 * u, cy + 26 * u); g.lineTo(cx + 14 * u, cy - 4 * u); g.lineTo(cx + 1 * u, cy - 4 * u); g.closePath(); g.fill(); g.stroke();
+}
 const QBOX = tex(128, 128, (g) => {
-  const gr = g.createLinearGradient(0, 0, 128, 128); gr.addColorStop(0, '#ffb703'); gr.addColorStop(0.5, '#ff4fa3'); gr.addColorStop(1, '#7b2ff7');
-  g.fillStyle = gr; g.fillRect(0, 0, 128, 128); g.strokeStyle = '#fff'; g.lineWidth = 10; g.strokeRect(6, 6, 116, 116);
-  g.font = 'bold 92px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 8; g.strokeStyle = '#3a0ca3'; g.strokeText('?', 64, 70); g.fillStyle = '#fff'; g.fillText('?', 64, 70);
+  g.fillStyle = '#ff7b00'; g.fillRect(0, 0, 128, 128);
+  g.save(); g.beginPath(); g.rect(0, 0, 128, 128); g.rect(14, 14, 100, 100); g.clip('evenodd'); g.fillStyle = '#151515'; g.fillRect(0, 0, 128, 128);
+  g.fillStyle = '#ffb703'; for (let k = -128; k < 256; k += 20) { g.beginPath(); g.moveTo(k, 0); g.lineTo(k + 10, 0); g.lineTo(k + 10 - 128, 128); g.lineTo(k - 128, 128); g.fill(); } g.restore();
+  g.fillStyle = '#e06a00'; g.fillRect(14, 62, 100, 4); // plank seam
+  for (const [x, y] of [[20, 20], [108, 20], [20, 108], [108, 108]]) { g.fillStyle = '#888'; g.beginPath(); g.arc(x, y, 4, 0, 7); g.fill(); }
+  drawBoltGear(g, 64, 64, 36);
 });
 const OIL = tex(128, 128, (g) => {
   g.fillStyle = 'rgba(10,10,14,0.92)'; g.beginPath(); for (let k = 0; k < 14; k++) { const a = k / 14 * 6.283, r = 48 + Math.sin(k * 2.7) * 10; g.lineTo(64 + Math.cos(a) * r, 64 + Math.sin(a) * r); } g.fill();
@@ -21,7 +32,7 @@ export class FX {
   constructor(scene, sim) {
     this.scene = scene; this.sim = sim; this.pool = []; this.live = []; this.objs = new Map(); this.rings = []; this.zaps = []; this.boxMeshes = new Map(); this.att = new Map(); this.t = 0;
     for (let k = 0; k < 320; k++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: SOFT, transparent: true, depthWrite: false })); sp.visible = false; scene.add(sp); this.pool.push(sp); }
-    this.boxGeo = new THREE.BoxGeometry(7, 7, 7); this.boxMat = new THREE.MeshBasicMaterial({ map: QBOX });
+    this.boxGeo = new THREE.BoxGeometry(7, 7, 7); this.boxMat = new THREE.MeshLambertMaterial({ map: QBOX, emissive: 0x331400 });
     this.ballMat = new THREE.MeshPhongMaterial({ color: 0xff4fa3, emissive: 0x551133, shininess: 120 });
     this.bombMat = new THREE.MeshPhongMaterial({ color: 0x15151a, shininess: 140, specular: 0x888888 });
   }
@@ -51,10 +62,10 @@ export class FX {
     // boxes
     if (W) for (const b of W.boxes) {
       let o = this.boxMeshes.get(b.id);
-      if (!o) { const m = new THREE.Mesh(this.boxGeo, this.boxMat); const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: SOFT, color: 0xffd23f, transparent: true, blending: ADD, depthWrite: false, opacity: 0.55 })); halo.scale.set(20, 20, 1); m.add(halo); this.scene.add(m); o = { m, halo, s: 1 }; this.boxMeshes.set(b.id, o); }
+      if (!o) { const m = new THREE.Mesh(this.boxGeo, this.boxMat); const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: SOFT, color: 0xff7b00, transparent: true, blending: ADD, depthWrite: false, opacity: 0.3 })); halo.scale.set(13, 13, 1); m.add(halo); this.scene.add(m); o = { m, halo, s: 1 }; this.boxMeshes.set(b.id, o); }
       o.s += ((b.active ? 1 : 0) - o.s) * Math.min(1, dt * 8); o.m.visible = o.s > 0.03;
-      o.m.position.set(b.x, b.y + Math.sin(t * 2.5 + b.id) * 1.2, b.z); o.m.rotation.set(0.4, t * 1.6 + b.id, 0.3); o.m.scale.setScalar(o.s * (1 + 0.06 * Math.sin(t * 6 + b.id)));
-      o.halo.material.opacity = 0.35 + 0.25 * Math.sin(t * 5 + b.id);
+      o.m.position.set(b.x, b.y + Math.sin(t * 2 + b.id) * 0.5, b.z); o.m.rotation.set(0, t * 0.8 + b.id, 0); // sturdy crate: slow turn, no tumbling o.m.scale.setScalar(o.s * (1 + 0.06 * Math.sin(t * 6 + b.id)));
+      o.halo.material.opacity = 0.2 + 0.1 * Math.sin(t * 4 + b.id);
     }
     // projectiles
     const seen = new Set();
@@ -94,6 +105,7 @@ export class FX {
       case 'shock': this.ring(e.x, e.y + 2, e.z, e.R, 0x7df9ff, 0.5); this.ring(e.x, e.y + 5, e.z, e.R * 0.7, 0xffffff, 0.35); this.spawn(e.x, e.y + 4, e.z, { color: 0x7df9ff, size: 30, life: 0.3, grow: 2 }); this.burst(e.x, e.y + 2, e.z, 24, 160, { color: 0xbde0fe, size: 4, life: 0.4, drag: 3 }); break;
       case 'zap': { const g = new THREE.BufferGeometry(); const m = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xaaf8ff, transparent: true, blending: ADD, depthWrite: false })); this.scene.add(m); this.zaps.push({ m, chain: e.chain, age: 0, life: 0.5 });
         if (e.chain.length < 2) this.burst(r.x, r.y + 5, r.z, 14, 50, { color: 0x7df9ff, size: 3, life: 0.4 }); break; }
+      case 'turboPad': this.burst(r.x, r.y + 2, r.z, 16, 70, { color: 0xffa200, size: 5, life: 0.4 }); this.ring(e.pad.x, e.pad.y + 1, e.pad.z, 22, 0xffb703, 0.35); break;
       case 'turbo': this.burst(r.x, r.y + 3, r.z, 14, 60, { color: 0x4cc9f0, size: 5, life: 0.4 }); break;
       case 'bombStick': case 'bombPass': { const q = e.to || r; this.burst(q.x, q.y + 10, q.z, 10, 40, { color: 0xff2a3a, size: 4, life: 0.4, star: true }); break; }
       case 'bump': this.burst(r.x + Math.cos(r.heading) * 6, r.y + 3, r.z + Math.sin(r.heading) * 6, 5, 50, { color: 0xffffaa, size: 2.5, life: 0.25 }); break;

@@ -1,4 +1,4 @@
-// Mystery '?' boxes + secret weapons (pure game logic, no rendering — runs in the headless sim too).
+// Mystery boxes (RC parts crates) + secret weapons (pure game logic, no rendering — runs in the headless sim too).
 import { CONFIG } from './config.js';
 
 export const WEAPONS = {

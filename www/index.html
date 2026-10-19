@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Tiny Zoom v3.2 — Toy Racing</title>
+<title>Tiny Zoom v3.3 — Toy Racing</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -24,12 +24,12 @@
   <div id="hudLap" class="panel"><div id="lapNum">Lap 1/3</div><div id="lapTime" class="mono">0:00.00</div></div>
   <div id="hudTimes" class="panel"><div>Total <b id="totTime" class="mono">0:00.0</b></div><div>Best <b id="bestTime" class="mono">—</b></div></div>
   <canvas id="minimap" width="150" height="132"></canvas>
-  <div id="hudBat" class="panel"><div class="batIcon"><div id="batFill"></div></div><span id="batPct" class="mono">100%</span><span id="spd" class="mono">0</span><small>cm/s</small><span id="alt" class="mono"></span></div>
+  <div id="hudBat" class="panel"><span id="spd" class="mono">0</span><small>cm/s</small><span id="alt" class="mono"></span></div>
   <div id="toast"></div>
   <div id="warn"></div>
   <button id="btnPause" class="hbtn" aria-label="Pause">⏸</button>
   <button id="btnReset" class="hbtn" aria-label="Reset to track">↺</button>
-  <button id="wslot" class="panel wbtn empty" aria-label="Weapon – tap to fire"><div id="wicon">?</div><div id="wname">Find a ? box</div><div id="wtap">TAP TO FIRE</div></button>
+  <button id="wslot" class="panel wbtn empty" aria-label="Weapon – tap to fire"><div id="wicon"><svg class="boltgear" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 4l7 10 12-4 2 12 12 2-4 12 10 7-10 7 4 12-12 2-2 12-12-4-7 10-7-10-12 4-2-12-12-2 4-12-10-7 10-7-4-12 12-2 2-12 12 4z" fill="#151515"/><circle cx="50" cy="50" r="30" fill="#ff7b00"/><path d="M56 26L36 54h12l-6 22 22-30H52z" fill="#ffd23f" stroke="#151515" stroke-width="3" stroke-linejoin="round"/></svg></div><div id="wname">Grab a crate</div><div id="wtap">TAP TO FIRE</div></button>
   <button id="btnJump" class="abtn jump" aria-label="Jump"><b>⤒</b><span id="lblJump">JUMP</span></button>
   <div id="stickL" class="stick"><div class="lbl" id="lblL">Throttle</div><div class="gimbal"><div class="cross"></div><div class="knob"></div></div></div>
   <div id="stickR" class="stick"><div class="lbl" id="lblR">Steer</div><div class="gimbal"><div class="cross"></div><div class="knob"></div></div></div>
@@ -40,7 +40,7 @@
 <div id="menu" class="overlay">
   <div class="menuBox">
     <div class="menuHead">
-      <h1>Tiny Zoom <span class="tag">v3.2</span></h1>
+      <h1>Tiny Zoom <span class="tag">v3.3</span></h1>
       <div class="sub">RC toy racing · tiny vehicles, giant world · jumps &amp; secret weapons</div>
     </div>
     <div class="menuBody">
@@ -70,8 +70,8 @@
     <p><b>🏎️🏍️🛴 Ground (race car, motorcycle, scooter):</b> Left stick up = throttle, down = brake/reverse. Right stick left/right = steering. Hard steer at speed = drift. <b>JUMP</b> button hops over small obstacles and barriers.</p>
     <p><b>🚁 Drone / Helicopter:</b> Left stick up/down = altitude (center = hold). Right stick: left/right = yaw, up/down = forward/back. The helicopter tilts its rotor first, carries more momentum and hovers less steadily. JUMP = quick hop up.</p>
     <p><b>🎁 Weapons:</b> Drive through a glowing <b>?</b> box – the weapon slot (bottom left, next to the left stick) rolls a random weapon. <b>Tap the slot</b> to fire it (or press F). Hits make racers spin/tumble briefly. A sticky bomb can be passed on by bumping another racer!</p>
-    <p><b>🛟 Flight assist:</b> Leave the left stick centred and the drone/helicopter holds a safe height by itself – it follows the hills and ducks under gates, tables and the tunnel. Not steering? The nose gently lines up with the track. Over a ⚡ pad it lands to charge.</p>
-    <p><b>⚡ Battery:</b> Flyers drain fast. Land low over a blue charging pad to recharge (5 along the track). Low battery = less speed.</p>
+    <p><b>🛟 Flight assist:</b> Leave the left stick centred and the drone/helicopter holds a safe height by itself – it follows the hills and ducks under gates, tables and the tunnel. Not steering? The nose gently lines up with the track. Turbo pads work for flyers too – just pass over them at cruise height.</p>
+    <p><b>🚀 Turbo pads:</b> 11 orange chevron pads along the track – before jumps, ramps and the tunnel and on the straights. Drive or fly over one for a short, strong speed boost. All vehicles have the same speed: win with RC parts crate prizes and turbo pads!</p>
     <p><b>⌨️ Keyboard:</b> W/S or ↑/↓ = throttle / forward-back · A/D or ←/→ = steer · Space = jump (ground) / up (flyers) · E up · Shift/Q down · F = fire · R = reset to track · Esc = pause</p>
     <button class="big" id="btnHelpClose">Got it</button>
   </div>

@@ -80,7 +80,7 @@ button.link{background:none;border:none;color:#bde0fe;text-decoration:underline;
 
 /* v2: weapon slot + action buttons */
 /* v3.2: the weapon slot IS the fire button – bottom left, right of the left stick, thumb-sized */
-#wslot{pointer-events:auto;top:auto;bottom:calc(max(10px,env(safe-area-inset-bottom)) + 12px);left:calc(max(14px,env(safe-area-inset-left)) + 166px);width:108px;height:100px;box-sizing:border-box;
+#wslot{pointer-events:auto;top:auto;bottom:calc(max(10px,env(safe-area-inset-bottom)) + 108px);right:calc(max(14px,env(safe-area-inset-right)) + 158px);left:auto;width:96px;height:90px;box-sizing:border-box;
   text-align:center;padding:6px 6px 4px;border-radius:20px;border:3px solid rgba(255,255,255,.45);color:#fff;font:inherit;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
   box-shadow:0 4px 0 rgba(0,0,0,.45),0 0 10px rgba(0,0,0,.4);transition:transform .08s,box-shadow .15s,background .15s;touch-action:none;cursor:pointer}
 #wicon{font-size:38px;line-height:44px;height:44px;filter:drop-shadow(0 2px 2px #000);pointer-events:none}
@@ -114,3 +114,7 @@ button.link{background:none;border:none;color:#bde0fe;text-decoration:underline;
 .hbtn{touch-action:manipulation}
 #rescueFx{position:fixed;inset:0;z-index:7;pointer-events:none;background:radial-gradient(circle at 50% 55%,rgba(255,255,255,0) 20%,rgba(255,255,255,.85) 75%);opacity:0;transition:opacity .25s}
 #rescueFx.on{opacity:1}
+.vcard .vflav{font-size:9.5px;opacity:.85;margin-top:2px}
+/* v3.3: weapon slot sits directly above JUMP (same column, 14px gap); bolt-gear crate icon */
+#wicon .boltgear{width:44px;height:44px;display:block;margin:2px auto}
+#wname{max-width:88px}

@@ -351,11 +351,19 @@ export function buildWorld(scene, track, renderer) {
   { const i = track.gates[0].i; const chk = canvasTex(128, 16, (g) => { for (let a = 0; a < 16; a++) for (let b = 0; b < 2; b++) { g.fillStyle = (a + b) % 2 ? '#111' : '#fff'; g.fillRect(a * 8, b * 8, 8, 8); } });
     const m = new THREE.Mesh(new THREE.PlaneGeometry(2 * track.halfW[i], 8), new THREE.MeshBasicMaterial({ map: chk })); m.rotation.x = -Math.PI / 2; m.rotation.z = -Math.atan2(track.tz[i], track.tx[i]) + Math.PI / 2; m.position.set(track.px[i], 0.2, track.pz[i]); scene.add(m); }
   // grid boxes
-  const padTex = canvasTex(128, 128, (g) => { g.fillStyle = '#0b3d91'; g.beginPath(); g.arc(64, 64, 62, 0, 7); g.fill(); g.strokeStyle = '#4cc9f0'; g.lineWidth = 8; g.beginPath(); g.arc(64, 64, 54, 0, 7); g.stroke(); g.fillStyle = '#ffd23f'; g.beginPath(); g.moveTo(72, 18); g.lineTo(40, 70); g.lineTo(62, 70); g.lineTo(54, 110); g.lineTo(88, 54); g.lineTo(66, 54); g.closePath(); g.fill(); });
-  const padRings = [];
+  // v3.3 turbo boost pads: orange plate with glowing chevrons pointing along the track + pulsing glow frame
+  const TPC = CONFIG.turboPads, padL = TPC.radius * 2.2, padW = TPC.radius * 1.7;
+  const padTex = canvasTex(128, 160, (g) => {
+    g.fillStyle = '#2a1200'; g.fillRect(0, 0, 128, 160); g.strokeStyle = '#ffb703'; g.lineWidth = 8; g.strokeRect(4, 4, 120, 152);
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    for (let k = 0; k < 3; k++) { const y = 125 - k * 42; g.strokeStyle = k === 2 ? '#fff3b0' : '#ff7b00'; g.lineWidth = 16; g.beginPath(); g.moveTo(22, y + 18); g.lineTo(64, y - 18); g.lineTo(106, y + 18); g.stroke(); }
+  });
+  const padRings = [], padGlowM = new THREE.MeshBasicMaterial({ color: 0xffa200, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending });
   track.pads.forEach(p => {
-    const m = new THREE.Mesh(new THREE.CircleGeometry(CONFIG.battery.padRadius, 32), new THREE.MeshBasicMaterial({ map: padTex })); m.rotation.x = -Math.PI / 2; m.position.set(p.x, 0.25, p.z); scene.add(m);
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(CONFIG.battery.padRadius, 0.8, 6, 32), new THREE.MeshBasicMaterial({ color: 0x4cc9f0, transparent: true, opacity: 0.7 })); ring.rotation.x = -Math.PI / 2; ring.position.set(p.x, 1, p.z); scene.add(ring); padRings.push(ring);
+    const grp = new THREE.Group(); grp.position.set(p.x, p.y + 0.3, p.z); grp.rotation.y = -p.dir + Math.PI / 2; // local -z = travel direction
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(padW, padL), new THREE.MeshBasicMaterial({ map: padTex })); m.rotation.x = -Math.PI / 2; grp.add(m);
+    const glow = new THREE.Mesh(new THREE.PlaneGeometry(padW * 1.35, padL * 1.25), padGlowM); glow.rotation.x = -Math.PI / 2; glow.position.y = 0.1; grp.add(glow);
+    grp.userData.glow = glow; grp.name = 'turboPad'; scene.add(grp); padRings.push(grp);
   });
 
   scene.add(B.mesh(lam(0xffffff, { vertexColors: true })));
@@ -366,7 +374,7 @@ export function buildWorld(scene, track, renderer) {
       let near = 0;
       for (const r of racers) { const d = Math.hypot(r.x - 400, r.z - 900); if (d < 22 && Math.abs(r.x - 400) < 16) near = Math.max(near, (1 - d / 22)) * Math.sign(r.vz || 1); }
       const target = -near * 1.3; flapPivot.rotation.x += (target - flapPivot.rotation.x) * 0.25;
-      padRings.forEach((rg, k) => { const s = 1 + 0.12 * Math.sin(t * 4 + k); rg.scale.set(s, s, s); rg.position.y = 1 + 2 * (0.5 + 0.5 * Math.sin(t * 3 + k)); });
+      padRings.forEach((g, k) => { const s = 1 + 0.08 * Math.sin(t * 8 + k); g.userData.glow.scale.set(s, 1, s); g.userData.glow.material.opacity = 0.35 + 0.25 * (0.5 + 0.5 * Math.sin(t * 8 + k)); });
     }
   };
 }

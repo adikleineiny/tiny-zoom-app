@@ -27,6 +27,7 @@ const COLORS = [0x3a86ff, 0xe63946, 0x2a9d8f, 0xf4a261, 0x9b5de5];
 const MODELS = Object.keys(CONFIG.models);
 const NAMES = ['Bolt', 'Buzz', 'Cork', 'Bee', 'Zip'];
 const normSel = t => CONFIG.models[t] ? t : (t === 'drone' ? 'drone' : 'racecar');
+const CRATE_ICON = '<svg class="boltgear" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 4l7 10 12-4 2 12 12 2-4 12 10 7-10 7 4 12-12 2-2 12-12-4-7 10-7-10-12 4-2-12-12-2 4-12-10-7 10-7-4-12 12-2 2-12 12 4z" fill="#151515"/><circle cx="50" cy="50" r="30" fill="#ff7b00"/><path d="M56 26L36 54h12l-6 22 22-30H52z" fill="#ffd23f" stroke="#151515" stroke-width="3" stroke-linejoin="round"/></svg>';
 const fmt = (t, d = 2) => { if (!isFinite(t)) return '—'; const m = Math.floor(t / 60), s = t - m * 60; return `${m}:${s.toFixed(d).padStart(d + 3, '0')}`; };
 const typeName = m => `${CONFIG.models[m]?.icon || ''} ${CONFIG.models[m]?.label || m}`;
 
@@ -75,8 +76,8 @@ function toMenu() {
 // ---------- UI wiring ----------
 $('vehList').innerHTML = MODELS.map(m => { const M = CONFIG.models[m];
   return `<button class="vcard${m === selected ? ' sel' : ''}" data-type="${m}"><div class="vicon">${M.icon}</div><div class="vname">${M.label}</div>` +
-    Object.entries(M.stats).filter(([k, v]) => !(k === 'Jump' && M.class === 'drone')).map(([k, v]) => `<div class="stat"><span>${k}</span><i style="--v:${v}%"></i></div>`).join('') +
-    (M.class === 'drone' ? `<div class="stat"><span>Flies</span><i style="--v:100%"></i></div>` : '') + `<div class="vnote">${M.note}</div></button>`; }).join('');
+    ['Speed', 'Accel', 'Boost'].map(k => `<div class="stat"><span>${k}</span><i style="--v:80%"></i></div>`).join('') +
+    `<div class="vflav">${M.class === 'drone' ? '🛸 Flies' : '🛞 Drives & jumps'} · equal stats</div><div class="vnote">${M.note}</div></button>`; }).join('');
 document.querySelectorAll('.vcard').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('.vcard').forEach(x => x.classList.remove('sel')); b.classList.add('sel'); selected = b.dataset.type;
 }));
@@ -175,7 +176,7 @@ const mmBase = document.createElement('canvas'); mmBase.width = MW; mmBase.heigh
 }
 function drawMinimap() {
   mctx.clearRect(0, 0, MW, MH); mctx.drawImage(mmBase, 0, 0);
-  for (const p of track.pads) { mctx.fillStyle = '#4cc9f0'; mctx.fillRect(mmX(p.x) - 2.5, mmZ(p.z) - 2.5, 5, 5); }
+  for (const p of track.pads) { mctx.fillStyle = '#ff9f1c'; mctx.fillRect(mmX(p.x) - 2.5, mmZ(p.z) - 2.5, 5, 5); }
   for (const r of sim.racers) { mctx.fillStyle = '#' + r.color.toString(16).padStart(6, '0'); mctx.beginPath(); mctx.arc(mmX(r.x), mmZ(r.z), r.isPlayer ? 4.5 : 3.2, 0, 7); mctx.fill(); if (r.isPlayer) { mctx.strokeStyle = '#fff'; mctx.lineWidth = 2; mctx.stroke(); } }
 }
 function updateSlot(dt) {
@@ -184,10 +185,10 @@ function updateSlot(dt) {
   if (player.rollT > 0) {
     rollIconT -= dt; cls = 'rolling';
     const left = player.rollT; if (rollIconT <= 0) { rollIconT = 0.05 + 0.25 * (1 - left / CONFIG.weapons.rollTime) ** 2; slotShown = WEAPON_KEYS[(WEAPON_KEYS.indexOf(slotShown) + 1 + Math.floor(Math.random() * 3)) % WEAPON_KEYS.length] || WEAPON_KEYS[0]; }
-    icon = WEAPONS[slotShown]?.icon || '?'; name = 'Rolling…';
+    icon = WEAPONS[slotShown]?.icon || CRATE_ICON; name = 'Rolling…';
   } else if (player.weapon) { cls = 'ready'; icon = WEAPONS[player.weapon].icon; name = WEAPONS[player.weapon].name; }
-  else { cls = 'empty'; icon = '?'; name = 'Find a ? box'; }
-  if (el.dataset.c !== cls + icon) { el.dataset.c = cls + icon; el.className = 'panel wbtn ' + cls + (el.classList.contains('down') ? ' down' : ''); /* keep the pressed state */ $('wicon').textContent = icon; $('wname').textContent = name; }
+  else { cls = 'empty'; icon = CRATE_ICON; name = 'Grab a crate'; }
+  if (el.dataset.c !== cls + icon) { el.dataset.c = cls + icon; el.className = 'panel wbtn ' + cls + (el.classList.contains('down') ? ' down' : ''); /* keep the pressed state */ $('wicon').innerHTML = icon; $('wname').textContent = name; }
 }
 function hudEvents() {
   if (!player) return;
@@ -198,6 +199,7 @@ function hudEvents() {
     else if (e.type === 'bombPass' && e.from === player) toast(`💣 Passed the bomb to ${e.to.name}!`);
     else if (e.type === 'rescue' && e.r === player) { $('rescueFx').classList.add('on'); toast(e.reason === 'wrongway' ? '🎣 Wrong way – back on track!' : '🎣 Back on track!'); }
     else if (e.type === 'rescued' && e.r === player) $('rescueFx').classList.remove('on');
+    if (e.type === 'turboPad' && e.r === player) window.RC_SOUND?.('turboPad', e); // sound hook (no audio engine yet)
   }
 }
 function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); toastT = 2.2; }
@@ -211,8 +213,7 @@ function updateHUD(dt) {
   $('lapNum').textContent = player.finished ? 'Finished!' : `Lap ${lap}/${CONFIG.laps}`;
   $('lapTime').textContent = fmt(player.finished ? player.lapTimes.at(-1) : (state === 'race' ? sim.t - player.lapStart : 0));
   $('totTime').textContent = fmt(player.finished ? player.finishTime : sim.t, 1); $('bestTime').textContent = fmt(player.best);
-  const b = player.battery; $('batFill').style.width = b + '%'; $('batFill').style.background = b < CONFIG.battery.lowThreshold ? '#ff4d6d' : b < 50 ? '#ffd23f' : '#52d273';
-  $('batPct').textContent = Math.round(b) + '%'; $('spd').textContent = Math.round(player.speed);
+  $('spd').textContent = Math.round(player.speed);
   $('alt').textContent = player.type === 'drone' ? `↕${Math.round(player.y)}` : '';
   const w = $('warn'); let msg = '', ok = false;
   if (player.bomb) msg = `💣 Sticky bomb ${player.bomb.t.toFixed(1)}s – bump someone!`;
@@ -221,8 +222,7 @@ function updateHUD(dt) {
   else if (player.rescueT > 0) { msg = '🎣 Back on track…'; ok = true; }
   else if (state === 'race' && sim.stuckLevel(player) > 0.4) msg = 'Stuck? Rescue coming… (↺ = reset now)';
   else if (player.wrongWayT > 1) msg = 'Wrong way!';
-  else if (player.onPad && player.battery < 100) { msg = '⚡ Charging...'; ok = true; }
-  else if (b < CONFIG.battery.lowThreshold) msg = player.type === 'drone' ? 'Low battery! Land on a ⚡ pad' : 'Low battery!';
+  else if (player.turboT > 0 && player.padCD > 0) { msg = '🚀 TURBO PAD!'; ok = true; }
   else if (player.type === 'drone' && player.y - (player.groundY || 0) < 3 && state === 'race' && !(CONFIG.flyerAssist?.autoAltitude && CONFIG.flyerAssist.level > 0) && player.spool >= 1 && player.lapsDone === 0 && sim.t < 6) { msg = 'Left stick up to take off'; ok = true; }
   w.textContent = msg; w.classList.toggle('ok', ok);
   drawMinimap();
@@ -297,7 +297,7 @@ window.__rc = {
     const steps = Math.round(maxSeconds / H);
     for (let k = 0; k < steps; k++) { sim.step(H); sim.events.length = 0; if (sim.racers.every(r => r.finished)) break; }
     CONFIG.weapons.enabled = wasW;
-    const res = sim.standings().map(r => ({ name: r.name, type: r.model, hits: r.hits, landed: r.landed || 0, shots: r.shots, player: r.isPlayer, finished: r.finished, total: +r.finishTime.toFixed(2), best: +r.best.toFixed(2), laps: r.lapTimes.map(x => +x.toFixed(2)), charges: r.charges, padTime: +r.padTime.toFixed(1), battery: Math.round(r.battery), secT: Object.fromEntries(Object.entries(r.secT||{}).map(([k,v])=>[k,+(v/CONFIG.laps).toFixed(1)])), maxSp: Object.fromEntries(Object.entries(r.maxSp||{}).map(([k,v])=>[k,Math.round(v)])) }));
+    const res = sim.standings().map(r => ({ name: r.name, type: r.model, hits: r.hits, landed: r.landed || 0, shots: r.shots, player: r.isPlayer, finished: r.finished, total: +r.finishTime.toFixed(2), best: +r.best.toFixed(2), laps: r.lapTimes.map(x => +x.toFixed(2)), padHits: r.padHits, secT: Object.fromEntries(Object.entries(r.secT||{}).map(([k,v])=>[k,+(v/CONFIG.laps).toFixed(1)])), maxSp: Object.fromEntries(Object.entries(r.maxSp||{}).map(([k,v])=>[k,Math.round(v)])) }));
     toMenu(); return res;
   },
 };

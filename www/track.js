@@ -39,7 +39,15 @@ const GATES = [
   { x: 130, z: 900, h: 55 },
   { x: 145, z: 400, h: 55 },
 ];
-const PADS = [{ x: 700, z: 145, lat: 28 }, { x: 700, z: 1095, lat: -28 }, { x: 1950, z: 1300, lat: 0 }, { x: 1390, z: 2440, lat: -30 }, { x: 300, z: 1430, lat: 0 }];
+// v3.3 turbo boost pads (replaced the old charging pads): before jumps/ramps/tunnels and on the straights
+const PADS = [
+  { x: 600, z: 145, lat: 0, why: 'kitchen straight' }, { x: 1000, z: 158, lat: 0, why: 'kitchen straight 2' },
+  { x: 845, z: 652, lat: 0, why: 'under the table' }, { x: 920, z: 1112, lat: 0, why: 'before the lawn kicker' },
+  { x: 1240, z: 1130, lat: 0, why: 'before the tunnel' }, { x: 1950, z: 1330, lat: 0, why: 'before the rolling hills' },
+  { x: 2015, z: 1860, lat: 0, why: 'hills straight' }, { x: 1630, z: 2432, lat: 0, why: 'before the Toy Town kicker' },
+  { x: 1110, z: 2434, lat: 0, why: 'before the BIG JUMP' }, { x: 300, z: 1790, lat: 0, why: 'garden straight' },
+  { x: 136, z: 620, lat: 0, why: 'west wall straight' },
+];
 
 // Height features, placed in track space (at = nearest centerline point, lat = lateral offset, len along the track).
 //  ramp:   wedge rising along the travel direction, sharp lip at the end → launches (kick = extra take-off pop)
@@ -109,8 +117,9 @@ export class Track {
     this.curv = blur(raw, 6, 2);
     // gates & pads
     this.gates = GATES.map((g, gi) => { const i = this.nearestIdx(g.x, g.z); return { ...g, i, s: this.s[i], hw: this.halfW[i], index: gi }; });
-    this.pads = PADS.map(pd => { const i = this.nearestIdx(pd.x, pd.z); return { i, s: this.s[i], x: this.px[i] + this.nx[i] * pd.lat, z: this.pz[i] + this.nz[i] * pd.lat }; });
+    this.pads = PADS.map(pd => { const i = this.nearestIdx(pd.x, pd.z); return { i, s: this.s[i], x: this.px[i] + this.nx[i] * pd.lat, z: this.pz[i] + this.nz[i] * pd.lat, dir: Math.atan2(this.tz[i], this.tx[i]), why: pd.why, y: 0 }; });
     this.buildFeatures();
+    for (const p of this.pads) p.y = this.groundAt(p.x, p.z);
     for (let i = 0; i < N; i++) this.surface[i] = this.surfaceAt(this.px[i], this.pz[i], i);
     // lateral margin a flying drone gets (0 near gates & in tight sections: table, pet door, tunnel, toy-town alleys)
     const SM = CONFIG.sectionFlyMargin || {};
