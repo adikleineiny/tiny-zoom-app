@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1d3557">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Tiny Zoom v3.2 — Toy Racing</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="speedlines"></div>
+<div id="rescueFx"></div>
+<div id="touchLayer" class="hidden"></div>
+
+<div id="hud" class="hidden">
+  <div id="hudPos" class="panel"><div class="lbl">Place</div><div><span id="posNum">4</span><small>/4</small></div></div>
+  <div id="hudLap" class="panel"><div id="lapNum">Lap 1/3</div><div id="lapTime" class="mono">0:00.00</div></div>
+  <div id="hudTimes" class="panel"><div>Total <b id="totTime" class="mono">0:00.0</b></div><div>Best <b id="bestTime" class="mono">—</b></div></div>
+  <canvas id="minimap" width="150" height="132"></canvas>
+  <div id="hudBat" class="panel"><div class="batIcon"><div id="batFill"></div></div><span id="batPct" class="mono">100%</span><span id="spd" class="mono">0</span><small>cm/s</small><span id="alt" class="mono"></span></div>
+  <div id="toast"></div>
+  <div id="warn"></div>
+  <button id="btnPause" class="hbtn" aria-label="Pause">⏸</button>
+  <button id="btnReset" class="hbtn" aria-label="Reset to track">↺</button>
+  <button id="wslot" class="panel wbtn empty" aria-label="Weapon – tap to fire"><div id="wicon">?</div><div id="wname">Find a ? box</div><div id="wtap">TAP TO FIRE</div></button>
+  <button id="btnJump" class="abtn jump" aria-label="Jump"><b>⤒</b><span id="lblJump">JUMP</span></button>
+  <div id="stickL" class="stick"><div class="lbl" id="lblL">Throttle</div><div class="gimbal"><div class="cross"></div><div class="knob"></div></div></div>
+  <div id="stickR" class="stick"><div class="lbl" id="lblR">Steer</div><div class="gimbal"><div class="cross"></div><div class="knob"></div></div></div>
+</div>
+
+<div id="countdown"></div>
+
+<div id="menu" class="overlay">
+  <div class="menuBox">
+    <div class="menuHead">
+      <h1>Tiny Zoom <span class="tag">v3.2</span></h1>
+      <div class="sub">RC toy racing · tiny vehicles, giant world · jumps &amp; secret weapons</div>
+    </div>
+    <div class="menuBody">
+      <div class="trackCard">
+        <div class="cardTitle">🏁 Track: <b>From the Kitchen to the Garden</b> <span class="tag">XL</span></div>
+        <ol class="sections">
+          <li><b>Kitchen &amp; Table</b> – fast tiles, then between chair legs under a low table</li>
+          <li><b>Pet Door → Lawn</b> – squeeze through the flap, kicker ramp on the grass</li>
+          <li><b>Sandbox Tunnel</b> – a drain pipe through the sand hill (no flying over!)</li>
+          <li><b>Rolling Hills</b> – bumps that throw you into the air</li>
+          <li><b>Toy Town</b> – street between houses, garage-roof shortcut over the mud, BIG JUMP over the puddle</li>
+          <li><b>Gnome Garden</b> – through the doghouse and back inside</li>
+        </ol>
+        <div class="small">3 laps · 3 rivals · pass every checkpoint gate (you can't fly over them)</div>
+        <div class="small wtip">🎁 Grab glowing <b>?</b> boxes for a random secret weapon: 💣 Sticky Bomb · 💨 Nitro Turbo · 🔥 Fire Trail · ⚡ Electrify · 🚀 Rocket · 🔴 Ball · 💥 Shockwave · 🛢️ Oil · 🥊 Glove</div>
+      </div>
+      <div class="pick">
+        <div class="cardTitle">Pick a vehicle:</div>
+        <div class="vehicles" id="vehList"></div>
+        <button id="btnStart" class="big">Let's race!</button>
+        <button id="btnHelp" class="link">How do I control?</button>
+      </div>
+    </div>
+  </div>
+  <div id="help" class="hidden">
+    <h3>Remote control – two sticks</h3>
+    <p><b>🏎️🏍️🛴 Ground (race car, motorcycle, scooter):</b> Left stick up = throttle, down = brake/reverse. Right stick left/right = steering. Hard steer at speed = drift. <b>JUMP</b> button hops over small obstacles and barriers.</p>
+    <p><b>🚁 Drone / Helicopter:</b> Left stick up/down = altitude (center = hold). Right stick: left/right = yaw, up/down = forward/back. The helicopter tilts its rotor first, carries more momentum and hovers less steadily. JUMP = quick hop up.</p>
+    <p><b>🎁 Weapons:</b> Drive through a glowing <b>?</b> box – the weapon slot (bottom left, next to the left stick) rolls a random weapon. <b>Tap the slot</b> to fire it (or press F). Hits make racers spin/tumble briefly. A sticky bomb can be passed on by bumping another racer!</p>
+    <p><b>🛟 Flight assist:</b> Leave the left stick centred and the drone/helicopter holds a safe height by itself – it follows the hills and ducks under gates, tables and the tunnel. Not steering? The nose gently lines up with the track. Over a ⚡ pad it lands to charge.</p>
+    <p><b>⚡ Battery:</b> Flyers drain fast. Land low over a blue charging pad to recharge (5 along the track). Low battery = less speed.</p>
+    <p><b>⌨️ Keyboard:</b> W/S or ↑/↓ = throttle / forward-back · A/D or ←/→ = steer · Space = jump (ground) / up (flyers) · E up · Shift/Q down · F = fire · R = reset to track · Esc = pause</p>
+    <button class="big" id="btnHelpClose">Got it</button>
+  </div>
+</div>
+
+<div id="pause" class="overlay hidden"><div class="dialog"><h2>Paused</h2>
+  <button class="big" id="btnResume">Resume</button><button class="big alt" id="btnRestart">New race</button><button class="big alt" id="btnMenu">Menu</button></div></div>
+
+<div id="finish" class="overlay hidden"><div class="dialog wide"><h2 id="finTitle">Finish!</h2>
+  <table id="results"><thead><tr><th>Place</th><th>Driver</th><th>Vehicle</th><th>Total time</th><th>Best lap</th><th>Laps</th><th>Hits</th></tr></thead><tbody></tbody></table>
+  <div id="balance" class="small"></div>
+  <div class="row"><button class="big" id="btnAgain">Again!</button><button class="big alt" id="btnMenu2">Menu</button></div></div></div>
+
+<div id="rotate"><div>📱↻</div><div>Rotate your phone to landscape</div></div>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+{
+  "name": "tiny-zoom-app",
+  "version": "1.0.0",
+  "description": "Tiny Zoom - RC toy racing (Capacitor iOS wrapper)",
+  "scripts": {
+    "sync:web": "rm -rf www && mkdir www && cp -r ../rc-games-flat/. www/ && rm -f www/README.md && python3 resources/make_icons.py",
+    "sync": "cap sync ios",
+    "icons": "python3 resources/make_icons.py",
+    "test:web": "python3 tools/smoke_test.py"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/ios": "^8.5.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.3"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  }
+}

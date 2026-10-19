@@ -1,0 +1,6 @@
+node_modules/
+.DS_Store
+tools/smoke.png
+*.p8
+*.p12
+*.mobileprovision

@@ -1,0 +1,12 @@
+{
+  "appId": "com.adikleineiny.tinyzoom",
+  "appName": "Tiny Zoom",
+  "webDir": "www",
+  "backgroundColor": "#ffa023",
+  "ios": {
+    "contentInset": "never",
+    "scrollEnabled": false,
+    "backgroundColor": "#ffa023",
+    "preferredContentMode": "mobile"
+  }
+}
