@@ -127,10 +127,13 @@ export const CONFIG = {
   // Surface multipliers per vehicle type
   surfaces: {
     tile:  { label: 'Tiles', car: { speed: 1.0, accel: 1.0, grip: 1.0 }, drone: { speed: 1.0, accel: 1.0 } },
-    grass: { label: 'Grass',    car: { speed: 0.64, accel: 0.6, grip: 0.7 }, drone: { speed: 0.885, accel: 0.885 } }, // v3.3: outdoor lawn headwind slows flyers too (≈ same lap cost as cars on grass)
+    grass: { label: 'Grass',    car: { speed: 0.64, accel: 0.6, grip: 0.7 }, drone: { speed: 0.892, accel: 0.892 } }, // v3.5: `drone` = wind-gust factor for flyers inside the visible gust zone over this surface (calibrated to the same lap-time cost as cars on grass)
     road:  { label: 'Play-mat road', car: { speed: 1.0, accel: 1.0, grip: 1.0 }, drone: { speed: 1.0, accel: 1.0 } },
-    water: { label: 'Puddle / mud', car: { speed: 0.42, accel: 0.45, grip: 0.5 }, drone: { speed: 1.0, accel: 1.0 } },
+    water: { label: 'Puddle / mud', car: { speed: 0.42, accel: 0.45, grip: 0.5 }, drone: { speed: 0.97, accel: 0.97 } }, // v3.5: storm gusts over mud & puddles
   },
+
+  // ===== v3.5 slow zones (grass / mud / puddle stretches): turbo pads + flyer wind gusts =====
+  slowZones: { padEvery: 800, minLen: 40, buffet: 22, buffetHz: 0.7 }, // buffet = gentle sideways gust push (cm/s²) for flyers
 
   // ===== Turbo pads (v3.3: replaced the old charging pads) =====
   turboPads: {
@@ -177,12 +180,19 @@ export const CONFIG = {
 
   camera: {
     fov: 70,
-    car:   { dist: 32, height: 11, lookAhead: 22, lookUp: 3 },
+    car:   { dist: 30, height: 9.5, lookAhead: 22, lookUp: 3 }, // v3.5: lower chase camera
     speedFov: 10,          // extra FOV at top speed (feels faster)
     turboFov: 14,          // extra FOV kick while turbo is on
     drone: { dist: 38, height: 12, lookAhead: 22, lookUp: 2 },
   },
-  render: { maxPixelRatio: 1.5 },
+  render: {                // v3.5 graphics
+    maxPixelRatio: 2,      // phones: crisp but capped (auto quality may lower it)
+    exposure: 1.0,         // ACES filmic tone mapping exposure
+    shadows: true,         // soft PCF sun shadows around the followed vehicle
+    shadowMap: 1024, shadowBox: 70,
+    autoQuality: true,     // frame time > targetMs for a while → step down (pixel ratio, then shadows)
+    targetMs: 20, upMs: 13,
+  },
 };
 
 // Apply the shared performance to every model (after ?cfg overrides, see bottom).

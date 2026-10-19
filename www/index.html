@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Tiny Zoom v3.4 — Toy Racing</title>
+<title>Tiny Zoom v3.5 — Toy Racing</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -24,7 +24,7 @@
   <div id="hudLap" class="panel"><div id="lapNum">Lap 1/3</div><div id="lapTime" class="mono">0:00.00</div></div>
   <div id="hudTimes" class="panel"><div>Total <b id="totTime" class="mono">0:00.0</b></div><div>Best <b id="bestTime" class="mono">—</b></div></div>
   <canvas id="minimap" width="150" height="132"></canvas>
-  <div id="hudBat" class="panel"><span id="spd" class="mono">0</span><small>cm/s</small><span id="alt" class="mono"></span></div>
+  <div id="hudBat" class="panel"><svg class="gauge" viewBox="0 0 100 60" aria-hidden="true"><path d="M10 52 A40 40 0 0 1 90 52" class="gTrack" pathLength="100"/><path id="gaugeArc" d="M10 52 A40 40 0 0 1 90 52" class="gArc" pathLength="100"/></svg><div class="gRead"><span id="spd" class="mono">0</span><small>cm/s</small></div><span id="alt" class="mono"></span></div>
   <div id="toast"></div>
   <div id="warn"></div>
   <button id="btnPause" class="hbtn" aria-label="Pause">⏸</button>
@@ -40,7 +40,7 @@
 <div id="menu" class="overlay">
   <div class="menuBox">
     <div class="menuHead">
-      <h1>Tiny Zoom <span class="tag">v3.4</span></h1>
+      <h1>Tiny Zoom <span class="tag">v3.5</span></h1>
       <div class="sub">RC toy racing · tiny vehicles, giant world · jumps &amp; secret weapons</div>
     </div>
     <div class="menuBody">
@@ -61,6 +61,7 @@
         <div class="cardTitle">Pick a vehicle:</div>
         <div class="vehicles" id="vehList"></div>
         <button id="btnStart" class="big">Let's race!</button>
+        <button class="link btnQuality" id="btnQuality">⚙️ Graphics</button>
         <button class="link btnControls" id="btnControls">🎮 Controls: One stick</button>
         <button id="btnHelp" class="link">How do I control?</button>
       </div>
@@ -73,14 +74,15 @@
     <p><b>🚁 Drone / Helicopter, Classic RC:</b> Left stick up/down = altitude (center = hold). Right stick: left/right = yaw, up/down = forward/back. The helicopter tilts its rotor first, carries more momentum and hovers less steadily. JUMP = quick hop up.</p>
     <p><b>🎁 Weapons:</b> Drive through a glowing <b>?</b> box – the weapon slot (bottom left, next to the left stick) rolls a random weapon. <b>Tap the slot</b> to fire it (or press F). Hits make racers spin/tumble briefly. A sticky bomb can be passed on by bumping another racer!</p>
     <p><b>🛟 Flight assist:</b> Leave the left stick centred and the drone/helicopter holds a safe height by itself – it follows the hills and ducks under gates, tables and the tunnel. Not steering? The nose gently lines up with the track. Drone and helicopter fly through glowing orange/cyan <b>turbo rings</b> instead – the assist lines you up with them.</p>
-    <p><b>🚀 Turbo pads:</b> 11 orange chevron pads along the track – before jumps, ramps and the tunnel and on the straights. Drive over one for a short, strong speed boost. Flyers: a floating <b>turbo ring</b> hangs above every pad – fly through it for the same boost. 💣 Bombs are lobbed <b>behind</b> you. All vehicles have the same speed: win with RC parts crate prizes and turbo pads!</p>
+    <p><b>🚀 Turbo pads:</b> 15 orange chevron pads along the track – before jumps, ramps and the tunnel, on the straights, and in every slow grass / mud / puddle stretch. Drive over one for a short, strong speed boost. Flyers: a floating <b>turbo ring</b> hangs above every pad – fly through it for the same boost. 💣 Bombs are lobbed <b>behind</b> you. 🌪️ Over grass, mud and puddles flyers meet swirling <b>wind gusts</b> that slow them just like the ground slows cars (pale-blue on the minimap). All vehicles have the same speed: win with RC parts crate prizes and turbo pads!</p>
     <p><b>⌨️ Keyboard:</b> W/S or ↑/↓ = throttle / forward-back · A/D or ←/→ = steer (combine, e.g. W+A, for diagonals) · Space = jump (ground) / up (flyers) · E up · Shift/Q down · F = fire · R = reset to track · Esc = pause</p>
+    <p class="small"><b>Credits:</b> Tiny Zoom – all models, textures and art are original and generated in code. Rendering by three.js (MIT License, © three.js authors).</p>
     <button class="big" id="btnHelpClose">Got it</button>
   </div>
 </div>
 
 <div id="pause" class="overlay hidden"><div class="dialog"><h2>Paused</h2>
-  <button class="big" id="btnResume">Resume</button><button class="big alt" id="btnRestart">New race</button><button class="big alt btnControls" id="btnControls2">🎮 Controls: One stick</button><button class="big alt" id="btnMenu">Menu</button></div></div>
+  <button class="big" id="btnResume">Resume</button><button class="big alt" id="btnRestart">New race</button><button class="big alt btnQuality" id="btnQuality2">⚙️ Graphics</button><button class="big alt btnControls" id="btnControls2">🎮 Controls: One stick</button><button class="big alt" id="btnMenu">Menu</button></div></div>
 
 <div id="finish" class="overlay hidden"><div class="dialog wide"><h2 id="finTitle">Finish!</h2>
   <table id="results"><thead><tr><th>Place</th><th>Driver</th><th>Vehicle</th><th>Total time</th><th>Best lap</th><th>Laps</th><th>Hits</th></tr></thead><tbody></tbody></table>

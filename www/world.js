@@ -31,9 +31,11 @@ const prism = (r, len) => new THREE.CylinderGeometry(r, r, len, 3).rotateZ(Math.
 
 const lam = (c, o = {}) => new THREE.MeshLambertMaterial({ color: c, ...o });
 
+let ANISO = 1;
+const HALO = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.25)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
 function canvasTex(w, h, draw, repeat) {
   const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = ANISO;
   if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat[0], repeat[1]); }
   return t;
 }
@@ -50,7 +52,7 @@ export function makeLabelTexture(text, bg = '#ffd23f', fg = '#222', w = 256, h =
 
 export function buildWorld(scene, track, renderer) {
   const solids = track.solids;
-  const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy()); ANISO = aniso;
   const B = new Batch(), GLOW = new Batch();
   const plain = mat => mat.isMeshLambertMaterial && !mat.map && !mat.transparent && mat.side === THREE.FrontSide;
   const box = (x0, x1, y0, y1, z0, z1, mat, opt = {}) => {
@@ -68,31 +70,47 @@ export function buildWorld(scene, track, renderer) {
   };
   const part = (geo, color, x, y, z, ry = 0, sx = 1, sy = 1, sz = 1) => B.add(geo, color, M4(x, y, z, ry, sx, sy, sz));
 
+  let startLights = [];
   // ---------- lights / sky ----------
   scene.background = new THREE.Color(0x9fd3f5);
   scene.fog = new THREE.Fog(0x9fd3f5, 1400, 3800);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7a66, 1.05));
-  const sun = new THREE.DirectionalLight(0xfff2dd, 1.1); sun.position.set(300, 500, 200); scene.add(sun);
-  scene.add(new THREE.AmbientLight(0xffffff, 0.15));
+  // v3.5: sky/ground hemisphere + warm sun with soft PCF shadows that follow the camera target
+  scene.add(new THREE.HemisphereLight(0xeaf6ff, 0x9a7a58, 1.0));
+  const sun = new THREE.DirectionalLight(0xfff0d8, 1.55); sun.position.set(300, 500, 200); scene.add(sun); scene.add(sun.target);
+  { const RC = CONFIG.render, S = sun.shadow, b = RC.shadowBox; sun.castShadow = true; S.mapSize.set(RC.shadowMap, RC.shadowMap); S.camera.left = -b; S.camera.right = b; S.camera.top = b; S.camera.bottom = -b; S.camera.near = 10; S.camera.far = 700; S.bias = -0.0008; S.normalBias = 0.4; S.radius = 3; }
+  const SUN_OFF = new THREE.Vector3(120, 260, 90);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.12));
+  // environment reflections for glossy vehicle paint: PMREM of a small generated room (bright window panels + warm floor)
+  { const env = new THREE.Scene(); const room = new THREE.Mesh(new THREE.BoxGeometry(100, 60, 100), new THREE.MeshBasicMaterial({ side: THREE.BackSide, vertexColors: true }));
+    const cols = [], pc = room.geometry.attributes.position; for (let k = 0; k < pc.count; k++) { const y = pc.getY(k); const c = new THREE.Color(y > 0 ? 0xcfe8ff : 0x7a5a3a); cols.push(c.r, c.g, c.b); } room.geometry.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3)); env.add(room);
+    const panel = (x, y, z, w, h, ry, c, i = 1) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(c).multiplyScalar(i), side: THREE.DoubleSide })); m.position.set(x, y, z); m.rotation.y = ry; env.add(m); };
+    panel(0, 10, -49, 60, 30, 0, 0xffffff, 3); panel(49, 8, 0, 40, 26, Math.PI / 2, 0xfff1d6, 2.2); panel(-49, 5, 20, 30, 16, Math.PI / 2, 0x9fd3f5, 1.4);
+    const top = new THREE.Mesh(new THREE.PlaneGeometry(50, 50), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffffff).multiplyScalar(2.5) })); top.rotation.x = Math.PI / 2; top.position.y = 29; env.add(top);
+    const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(env, 0.02).texture; pm.dispose(); }
 
   // ---------- floors ----------
-  const tileTex = canvasTex(256, 256, (g, w, h) => {
-    const r = rnd(7);
+  const tileTex = canvasTex(512, 512, (g, w, h) => { // v3.5: 512px glazed terracotta/cream tiles with speckle, edge shading, grout
+    const r = rnd(7), T = 256;
     for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
-      const dark = (i + j) % 2 === 1; const v = (r() - 0.5) * 10;
-      g.fillStyle = dark ? `rgb(${196 + v},${110 + v},${84 + v})` : `rgb(${240 + v / 2},${232 + v / 2},${214 + v / 2})`;
-      g.fillRect(i * 128, j * 128, 128, 128);
-      g.fillStyle = 'rgba(255,255,255,0.08)'; g.fillRect(i * 128 + 10, j * 128 + 10, 60, 30);
+      const dark = (i + j) % 2 === 1; const v = (r() - 0.5) * 12, x0 = i * T, y0 = j * T;
+      const gr = g.createLinearGradient(x0, y0, x0 + T, y0 + T);
+      if (dark) { gr.addColorStop(0, `rgb(${206 + v},${104 + v},${70 + v})`); gr.addColorStop(1, `rgb(${178 + v},${84 + v},${56 + v})`); }
+      else { gr.addColorStop(0, `rgb(${248 + v / 3},${240 + v / 3},${222 + v / 3})`); gr.addColorStop(1, `rgb(${228 + v / 3},${218 + v / 3},${198 + v / 3})`); }
+      g.fillStyle = gr; g.fillRect(x0, y0, T, T);
+      for (let k = 0; k < 900; k++) { g.fillStyle = `rgba(${dark ? '90,40,20' : '120,100,80'},${0.05 + r() * 0.08})`; g.fillRect(x0 + r() * T, y0 + r() * T, 1 + r() * 2, 1 + r() * 2); }
+      g.fillStyle = 'rgba(255,255,255,0.10)'; g.fillRect(x0 + 18, y0 + 18, T * 0.45, 10); g.fillRect(x0 + 18, y0 + 18, 10, T * 0.3); // glaze highlight
+      g.fillStyle = 'rgba(0,0,0,0.10)'; g.fillRect(x0 + T - 14, y0 + 6, 8, T - 12); g.fillRect(x0 + 6, y0 + T - 14, T - 12, 8);  // bevel shade
     }
-    g.strokeStyle = '#9b8c78'; g.lineWidth = 5; for (let k = 0; k <= 2; k++) { g.beginPath(); g.moveTo(k * 128, 0); g.lineTo(k * 128, 256); g.stroke(); g.beginPath(); g.moveTo(0, k * 128); g.lineTo(256, k * 128); g.stroke(); }
+    g.strokeStyle = '#8f8270'; g.lineWidth = 7; for (let k = 0; k <= 2; k++) { g.beginPath(); g.moveTo(k * T, 0); g.lineTo(k * T, h); g.stroke(); g.beginPath(); g.moveTo(0, k * T); g.lineTo(w, k * T); g.stroke(); }
   }, [1400 / 60, 900 / 60]);
   tileTex.anisotropy = aniso;
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(1400, 900), lam(0xffffff, { map: tileTex }));
   floor.rotation.x = -Math.PI / 2; floor.position.set(700, 0, 450); scene.add(floor);
 
-  const grassTex = canvasTex(256, 256, (g, w, h) => {
-    g.fillStyle = '#5fa83c'; g.fillRect(0, 0, w, h); const r = rnd(3);
-    for (let k = 0; k < 2500; k++) { const v = r(); g.fillStyle = v < 0.5 ? '#4f9a32' : v < 0.85 ? '#74bd4a' : '#3d8226'; g.fillRect(r() * w, r() * h, 2, 5 + r() * 6); }
+  const grassTex = canvasTex(512, 512, (g, w, h) => { // v3.5: denser blades, colour patches
+    g.fillStyle = '#5aa636'; g.fillRect(0, 0, w, h); const r = rnd(3);
+    for (let k = 0; k < 40; k++) { g.fillStyle = `rgba(${r() < 0.5 ? '40,110,30' : '140,190,70'},0.18)`; g.beginPath(); g.arc(r() * w, r() * h, 20 + r() * 60, 0, 7); g.fill(); }
+    for (let k = 0; k < 9000; k++) { const v = r(); g.fillStyle = v < 0.45 ? '#4a9630' : v < 0.8 ? '#79c24c' : v < 0.95 ? '#3a7f25' : '#a6d86a'; const x = r() * w, y = r() * h; g.save(); g.translate(x, y); g.rotate((r() - 0.5) * 0.6); g.fillRect(0, 0, 1.6, 5 + r() * 9); g.restore(); }
   }, [3600 / 120, 2120 / 120]);
   grassTex.anisotropy = aniso;
   const grassM = lam(0xffffff, { map: grassTex });
@@ -152,7 +170,7 @@ export function buildWorld(scene, track, renderer) {
   fshadow(565, 835, 270, 390); fshadow(195, 1155, 0, 70);
 
   // dining table + chairs (section 2)
-  const woodTex = canvasTex(256, 64, (g, w, h) => { g.fillStyle = '#b07a46'; g.fillRect(0, 0, w, h); const r = rnd(11); for (let k = 0; k < 40; k++) { g.strokeStyle = `rgba(90,50,20,${0.15 + r() * 0.2})`; g.lineWidth = 1 + r() * 2; g.beginPath(); const y = r() * h; g.moveTo(0, y); g.bezierCurveTo(w / 3, y + r() * 8 - 4, 2 * w / 3, y + r() * 8 - 4, w, y); g.stroke(); } });
+  const woodTex = canvasTex(512, 128, (g, w, h) => { g.fillStyle = '#b07a46'; g.fillRect(0, 0, w, h); const r = rnd(11); for (let k = 0; k < 4; k++) { g.fillStyle = `rgba(${r() < 0.5 ? '70,40,15' : '210,160,100'},0.12)`; g.fillRect(0, k * 32, w, 32); g.fillStyle = 'rgba(40,20,5,0.35)'; g.fillRect(0, k * 32, w, 1.5); } for (let k = 0; k < 6; k++) { g.strokeStyle = 'rgba(80,40,15,0.35)'; g.lineWidth = 1.5; g.beginPath(); g.ellipse(r() * w, r() * h, 6 + r() * 10, 2 + r() * 3, 0, 0, 7); g.stroke(); } for (let k = 0; k < 90; k++) { g.strokeStyle = `rgba(90,50,20,${0.15 + r() * 0.2})`; g.lineWidth = 1 + r() * 2; g.beginPath(); const y = r() * h; g.moveTo(0, y); g.bezierCurveTo(w / 3, y + r() * 8 - 4, 2 * w / 3, y + r() * 8 - 4, w, y); g.stroke(); } });
   const woodM = lam(0xffffff, { map: woodTex }), legM = lam(0x8c5a30);
   box(596, 904, 70, 75, 586, 694, woodM);
   box(606, 894, 62, 70, 592, 595, legM); box(606, 894, 62, 70, 685, 688, legM);
@@ -199,9 +217,12 @@ export function buildWorld(scene, track, renderer) {
   cyl(820, 1300, 16, 0, 220, lam(0x7a5230), 10); part(new THREE.SphereGeometry(120, 14, 10), 0x4c9a3f, 820, 290, 1300);
   cyl(1500, 1750, 22, 0, 260, lam(0x7a5230), 10); part(new THREE.SphereGeometry(150, 14, 10), 0x5aa848, 1500, 340, 1750);
   cyl(2350, 2300, 20, 0, 240, lam(0x7a5230), 10); part(new THREE.SphereGeometry(130, 14, 10), 0x4c9a3f, 2350, 320, 2300);
-  const fenceM = lam(0xe9dcc3);
-  for (let x = -600; x <= 2600; x += 24) box(x, x + 16, 0, 150, 2880, 2886, fenceM, { solid: false });
-  for (let z = 900; z <= 2880; z += 24) { box(-606, -600, 0, 150, z, z + 16, fenceM, { solid: false }); box(2620, 2626, 0, 150, z, z + 16, fenceM, { solid: false }); }
+  // v3.5: weathered wooden garden fence – planks in a few wood tones + two rails
+  const fenceMs = [0xa06a3a, 0x94602f, 0xab7443, 0x8a5a2c].map(c => lam(c)), railM = lam(0x7a4c24); let fk = 0;
+  const fm = () => fenceMs[(fk = (fk * 7 + 3) % 4)];
+  for (let x = -600; x <= 2600; x += 18) box(x, x + 16, 0, 150 + (x % 36 ? 0 : 6), 2880, 2886, fm(), { solid: false });
+  for (let z = 900; z <= 2880; z += 18) { box(-606, -600, 0, 150, z, z + 16, fm(), { solid: false }); box(2620, 2626, 0, 150, z, z + 16, fm(), { solid: false }); }
+  for (const y of [35, 115]) { box(-600, 2620, y, y + 8, 2876, 2880, railM, { solid: false }); box(-600, -596, y, y + 8, 900, 2880, railM, { solid: false }); box(2616, 2620, y, y + 8, 900, 2880, railM, { solid: false }); }
   const r2 = rnd(5); const flowerC = [0xff595e, 0xffca3a, 0xffffff, 0xc77dff];
   const offTrack = (x, z, m) => { const pr = track.project(x, z, null); return Math.abs(pr.lat) > track.halfW[pr.idx] + m; };
   for (let k = 0, n = 0; k < 400 && n < 90; k++) { const x = -500 + r2() * 3000, z = 960 + r2() * 1880; if (!offTrack(x, z, 20) || (x > 1270 && x < 1670 && z > 970 && z < 1290)) continue; n++;
@@ -347,9 +368,33 @@ export function buildWorld(scene, track, renderer) {
     lbl.rotation.y = ry - Math.PI / 2; lbl.position.set(gx + track.tx[i] * back, ly, gz + track.tz[i] * back); scene.add(lbl);
   });
   if (panels.length) scene.add(new THREE.Mesh(mergeGeos(panels), noFlyM));
+  // v3.5 track markings: crisp white edge lines along both sides of the whole racing line (follow ramps / hills)
+  { const pos = [], idx = [], N = track.N, w = 0.55;
+    for (const sd of [-1, 1]) { const base = pos.length / 3;
+      for (let i = 0; i <= N; i++) { const k = i % N, l = sd * (track.halfW[k] - 1.8), cx = track.px[k] + track.nx[k] * l, cz = track.pz[k] + track.nz[k] * l;
+        for (const e of [-w, w]) { const x = cx + track.nx[k] * e, z = cz + track.nz[k] * e; pos.push(x, track.groundAt(x, z) + 0.18, z); } }
+      for (let i = 0; i < N; i++) { const a = base + i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); } }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0xf4f4f0, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 })); m.name = 'edgeLines'; scene.add(m); }
   // start line
   { const i = track.gates[0].i; const chk = canvasTex(128, 16, (g) => { for (let a = 0; a < 16; a++) for (let b = 0; b < 2; b++) { g.fillStyle = (a + b) % 2 ? '#111' : '#fff'; g.fillRect(a * 8, b * 8, 8, 8); } });
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(2 * track.halfW[i], 8), new THREE.MeshBasicMaterial({ map: chk })); m.rotation.x = -Math.PI / 2; m.rotation.z = -Math.atan2(track.tz[i], track.tx[i]) + Math.PI / 2; m.position.set(track.px[i], 0.2, track.pz[i]); scene.add(m); }
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(2 * track.halfW[i], 8), new THREE.MeshBasicMaterial({ map: chk })); m.rotation.x = -Math.PI / 2; m.rotation.z = -Math.atan2(track.tz[i], track.tx[i]) + Math.PI / 2; m.position.set(track.px[i], 0.2, track.pz[i]); scene.add(m);
+    // v3.5 start-line gantry: two striped posts, a banner with an original toy-car emblem + 'START', and 4 start lights
+    const hw = track.halfW[i] + 6, dir = Math.atan2(track.tz[i], track.tx[i]), nx = track.nx[i], nz = track.nz[i], H = Math.min(44, track.ceilingAt(track.px[i], track.pz[i]) - 6);
+    const postTex = canvasTex(32, 128, (g) => { for (let k = 0; k < 8; k++) { g.fillStyle = k % 2 ? '#e63946' : '#ffffff'; g.fillRect(0, k * 16, 32, 16); } }, [1, 2]);
+    const postM = new THREE.MeshLambertMaterial({ map: postTex });
+    for (const sd of [-1, 1]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.9, H, 12), postM); p.position.set(track.px[i] + nx * hw * sd, H / 2, track.pz[i] + nz * hw * sd); scene.add(p); }
+    const banTex = canvasTex(1024, 128, (g, w, h) => {
+      for (let a = 0; a < 64; a++) for (let b = 0; b < 2; b++) { g.fillStyle = (a + b) % 2 ? '#111' : '#fff'; g.fillRect(a * 16, b * 16, 16, 16); g.fillRect(a * 16, h - 32 + b * 16, 16, 16); }
+      g.fillStyle = '#e63946'; g.fillRect(0, 32, w, h - 64);
+      g.fillStyle = '#ffffff'; g.beginPath(); g.arc(w / 2 - 190, h / 2, 26, 0, 7); g.fill(); g.fillStyle = '#111'; g.fillRect(w / 2 - 210, h / 2 - 6, 40, 12); g.beginPath(); g.arc(w / 2 - 202, h / 2 + 10, 6, 0, 7); g.arc(w / 2 - 178, h / 2 + 10, 6, 0, 7); g.fill();
+      g.font = "900 54px 'Arial Black', Arial, sans-serif"; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 8; g.strokeStyle = '#7a0d12'; g.strokeText('START', w / 2 + 40, h / 2 + 2); g.fillStyle = '#ffe14d'; g.fillText('START', w / 2 + 40, h / 2 + 2);
+    });
+    const ban = new THREE.Mesh(new THREE.BoxGeometry(2 * hw, 9, 1.2), [0, 0, 0, 0, 1, 1].map(k => k ? new THREE.MeshLambertMaterial({ map: banTex }) : new THREE.MeshLambertMaterial({ color: 0xb02a33 })));
+    ban.position.set(track.px[i], H - 4, track.pz[i]); ban.rotation.y = -dir - Math.PI / 2; scene.add(ban);
+    const lights = []; for (let k = 0; k < 4; k++) { const o = (k - 1.5) * 5; const l = new THREE.Mesh(new THREE.SphereGeometry(1.5, 12, 8), new THREE.MeshBasicMaterial({ color: 0x331111 })); l.position.set(track.px[i] + nx * o - track.tx[i] * 1, H - 10.5, track.pz[i] + nz * o - track.tz[i] * 1); scene.add(l); lights.push(l); }
+    const housing = new THREE.Mesh(new THREE.BoxGeometry(23, 4.5, 2), new THREE.MeshLambertMaterial({ color: 0x1b1b1b })); housing.position.set(track.px[i], H - 10.5, track.pz[i]); housing.rotation.y = -dir - Math.PI / 2; scene.add(housing);
+    startLights = lights; }
   // grid boxes
   // v3.3 turbo boost pads: orange plate with glowing chevrons pointing along the track + pulsing glow frame
   const TPC = CONFIG.turboPads, padL = TPC.radius * 2.2, padW = TPC.radius * 1.7;
@@ -371,6 +416,28 @@ export function buildWorld(scene, track, renderer) {
 
   // v3.4 floating turbo rings (drone + helicopter): orange ring with a cyan inner glow ring, see-through cyan
   // shimmer disc and 4 chevron fins pointing along the track. Built on first update (track.rings exist after finalize()).
+  // v3.5 wind-gust zones for flyers (over every grass / mud / puddle slow zone): translucent swirling vortex columns at
+  // flying height + drifting leaves / dust (original look). Purely visual – the slow factor lives in track.gust.
+  const gusts = [];
+  { const swirl = canvasTex(128, 128, (g) => { g.clearRect(0, 0, 128, 128); for (let k = 0; k < 7; k++) { g.strokeStyle = `rgba(255,255,255,${0.25 + 0.1 * (k % 3)})`; g.lineWidth = 3 + (k % 2) * 3; g.beginPath(); for (let y = 0; y <= 128; y += 4) { const x = (k * 18 + y * 0.9) % 128; y === 0 ? g.moveTo(x, y) : g.lineTo(x, y); } g.stroke(); } });
+    swirl.wrapS = swirl.wrapT = THREE.RepeatWrapping;
+    const leafTex = canvasTex(32, 32, (g) => { g.fillStyle = '#fff'; g.beginPath(); g.ellipse(16, 16, 13, 6, 0.6, 0, 7); g.fill(); });
+    for (const z of track.zones || []) {
+      const water = z.surface === 'water', n = Math.max(1, Math.round(z.len / 170));
+      const vm = new THREE.MeshBasicMaterial({ map: swirl, color: water ? 0x9fd8ff : 0xd8f0c0, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+      const cols = [], pts = [], seeds = [];
+      for (let k = 0; k < n; k++) { const i = Math.round(z.i0 + (k + 0.5) / n * (z.i1 - z.i0)), sd = (k % 2 ? 1 : -1) * track.halfW[i] * 0.45, x = track.px[i] + track.nx[i] * sd, zz = track.pz[i] + track.nz[i] * sd;
+        const gy = track.groundAt(x, zz), top = Math.min(48, track.ceilingAt(x, zz) - gy - 4);
+        if (top < 18) continue;
+        const c = new THREE.Mesh(new THREE.CylinderGeometry(9, 4, top, 18, 1, true), vm); c.position.set(x, gy + top / 2 + 1, zz); c.name = 'gustVortex'; scene.add(c); cols.push(c);
+        for (let q = 0; q < 14; q++) { pts.push(x, gy + 5, zz); seeds.push({ cx: x, cz: zz, gy, top, a: Math.random() * 6.28, r: 2 + Math.random() * 8, h: Math.random(), sp: 2 + Math.random() * 2 }); } }
+      const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+      const pm = new THREE.PointsMaterial({ map: leafTex, color: water ? 0xb9d7e8 : 0x9bbf4a, size: 2.4, transparent: true, depthWrite: false, alphaTest: 0.2 });
+      const P = new THREE.Points(pg, pm); P.frustumCulled = false; scene.add(P);
+      gusts.push({ zone: z, cols, P, seeds });
+    } }
+  // v3.5: all opaque world surfaces receive the sun's soft shadows (vehicles cast them)
+  scene.traverse(o => { if (o.isMesh && !(o.material.transparent)) o.receiveShadow = true; });
   let flyRings = null;
   const buildRings = () => {
     flyRings = []; const R = TPC.ringR;
@@ -381,14 +448,20 @@ export function buildWorld(scene, track, renderer) {
       const inner = new THREE.Mesh(new THREE.TorusGeometry(R - 2.2, 0.6, 8, 40), cyan); grp.add(inner);
       const disc = new THREE.Mesh(new THREE.CircleGeometry(R - 2.6, 32), new THREE.MeshBasicMaterial({ color: 0x3ff6ff, transparent: true, opacity: 0.12, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false })); grp.add(disc);
       for (let k = 0; k < 4; k++) { const f = new THREE.Mesh(new THREE.ConeGeometry(1.4, 3.5, 4), orange); const a = k * Math.PI / 2 + Math.PI / 4; f.position.set(Math.cos(a) * (R + 2.2), Math.sin(a) * (R + 2.2), 0); f.rotation.x = Math.PI / 2; grp.add(f); }
+      const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: HALO, color: 0xffa040, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false })); halo.scale.set(R * 3.4, R * 3.4, 1); grp.add(halo); // soft glow (cheap bloom)
       grp.userData = { inner, disc }; grp.name = 'turboRing'; scene.add(grp); flyRings.push(grp);
     }
   };
 
   return {
-    rings: () => flyRings,
+    rings: () => flyRings, gusts,
+    sun,
+    followSun(r) { if (!r) return; sun.position.set(r.x + SUN_OFF.x, r.y + SUN_OFF.y, r.z + SUN_OFF.z); sun.target.position.set(r.x, r.y, r.z); },
+    setStartLights(n) { startLights.forEach((l, k) => l.material.color.setHex(n >= 4 ? 0x2bff5a : k < n ? 0xff2a2a : 0x331111)); },
     update(t, racers) {
       if (!flyRings && track.rings) buildRings();
+      for (const G of gusts) { G.cols.forEach((c, k) => { c.rotation.y = t * (2.2 + k * 0.1); c.material.map.offset.y = -t * 0.4; });
+        const a = G.P.geometry.attributes.position; G.seeds.forEach((d, k) => { d.a += d.sp * 0.016; d.h = (d.h + 0.004 * d.sp) % 1; a.setXYZ(k, d.cx + Math.cos(d.a) * d.r * (0.6 + d.h), d.gy + 3 + d.h * d.top, d.cz + Math.sin(d.a) * d.r * (0.6 + d.h)); }); a.needsUpdate = true; }
       if (flyRings) flyRings.forEach((g, k) => { const q = 0.5 + 0.5 * Math.sin(t * 7 + k); g.userData.inner.scale.setScalar(0.96 + 0.06 * q); g.userData.disc.material.opacity = 0.08 + 0.14 * q; g.userData.inner.rotation.z = t * 1.5; });
       let near = 0;
       for (const r of racers) { const d = Math.hypot(r.x - 400, r.z - 900); if (d < 22 && Math.abs(r.x - 400) < 16) near = Math.max(near, (1 - d / 22)) * Math.sign(r.vz || 1); }

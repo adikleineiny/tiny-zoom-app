@@ -316,7 +316,7 @@ export class Sim {
     r.y = g; r.vy = clamp(rate, -300, 420);
   }
   droneStep(r, dt) {
-    const d = r.V, T = this.T, sf = CONFIG.surfaces[r.surface].drone, inp = r.input;
+    const d = r.V, T = this.T, gf = T.gust ? T.gust[r.idx] : 1, sf = { speed: gf, accel: gf }, inp = r.input; // v3.5: flyers slowed only inside visible gust zones
     const FA = CONFIG.flyerAssist || {}, as = clamp(FA.level ?? 0, 0, 1), pilot = r.isPlayer && !r.autopilot && !r.finished && as > 0;
     if (this.running) r.spool = Math.min(1, r.spool + dt / d.spoolTime);
     const ctl = r.controllable, power = ctl && r.stunT <= 0;
@@ -359,6 +359,7 @@ export class Sim {
     let vF = r.vx * ch + r.vz * sh, vL = -r.vx * sh + r.vz * ch;
     vL *= Math.exp(-(d.lateralDamp + (FA.extraLateralDamp || 0) * as) * dt);
     if (!air) { const g = Math.exp(-d.groundFriction * dt); vF *= g; vL *= g; }
+    r.inGust = gf < 1; if (r.inGust && air) { const SZ = CONFIG.slowZones; r.gustPh = (r.gustPh || r.id * 1.7) + dt * SZ.buffetHz * 6.283; vL += Math.sin(r.gustPh) * SZ.buffet * dt; r.vy += Math.sin(r.gustPh * 1.7) * SZ.buffet * 0.25 * dt; } // gentle, zero-mean buffet
     r.vx = vF * ch - vL * sh; r.vz = vF * sh + vL * ch;
     r.heading += steerIn * d.yawRate * Math.max(0.3, r.spool) * dt;
     if (r.spinT > 0) r.heading += r.spinDir * CONFIG.weapons.hit.spinRate * 0.8 * Math.min(1, r.spinT * 2) * dt;

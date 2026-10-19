@@ -36,7 +36,7 @@ export class FX {
     this.ballMat = new THREE.MeshPhongMaterial({ color: 0xff4fa3, emissive: 0x551133, shininess: 120 });
     this.bombMat = new THREE.MeshPhongMaterial({ color: 0x15151a, shininess: 140, specular: 0x888888 });
   }
-  clearAtt() { for (const a of this.att.values()) if (a.bomb) this.scene.remove(a.bomb); this.att.clear(); }
+  clearAtt() { if (this.sk) { this.sk.g.attributes.position.array.fill(0); this.sk.g.attributes.position.needsUpdate = true; this.sk.last.clear(); } for (const a of this.att.values()) if (a.bomb) this.scene.remove(a.bomb); this.att.clear(); }
   // ---------- particles ----------
   spawn(x, y, z, o = {}) {
     const sp = this.pool.pop() || this.live.shift()?.sp; if (!sp) return;
@@ -151,9 +151,34 @@ export class FX {
       if (Math.random() < 0.25) this.spawn(h.x + rnd(-3, 3), h.y + 4, h.z + rnd(-3, 3), { color: 0xffb703, size: 2.5, vy: rnd(20, 50), life: 0.6, drag: 0.5 }); }
     else { const blink = Math.sin(this.t * (10 + 30 * f)) > 0; o.m.userData.led.visible = blink; o.m.userData.spark.material.rotation += dt * 9; }
   }
+  // v3.5 tyre skid marks: one ring-buffer mesh of dark quads laid down by sliding / hard-braking ground vehicles
+  skid(r, dt) {
+    if (!this.sk) { const N = 900; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 12), 3)); g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(N * 16), 4));
+      const idx = []; for (let k = 0; k < N; k++) idx.push(k * 4, k * 4 + 1, k * 4 + 2, k * 4 + 2, k * 4 + 1, k * 4 + 3); g.setIndex(idx);
+      const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })); m.frustumCulled = false; m.renderOrder = 1; this.scene.add(m); this.sk = { g, N, i: 0, last: new Map() }; }
+    const S = this.sk, c = Math.cos(r.heading), s = Math.sin(r.heading), vL = Math.abs(-r.vx * s + r.vz * c);
+    const sliding = r.type === 'car' && r.grounded && r.surface !== 'water' && r.speed > 20 && (r.drifting || vL > 18 || (r.input.thr < -0.3 && r.fwd > 30) || r.spinT > 0);
+    const halfT = r.model === 'moto' || r.model === 'scooter' ? [0] : [-3.6, 3.6];
+    const prev = S.last.get(r);
+    if (!sliding) { S.last.delete(r); return; }
+    const cur = halfT.map(o => [r.x - c * 4.5 - s * o, (r.groundY || 0) + 0.15, r.z - s * 4.5 + c * o]);
+    if (prev && Math.hypot(cur[0][0] - prev[0][0], cur[0][2] - prev[0][2]) < 1.2) return;
+    if (prev) { const P = S.g.attributes.position.array, C = S.g.attributes.color.array, w = 0.9, col = r.surface === 'grass' ? [0.22, 0.32, 0.12] : [0.08, 0.07, 0.07];
+      for (let k = 0; k < cur.length; k++) { const a = prev[k], b = cur[k], q = S.i; S.i = (S.i + 1) % S.N;
+        const dx = b[0] - a[0], dz = b[2] - a[2], L = Math.hypot(dx, dz) || 1, nx = -dz / L * w, nz = dx / L * w;
+        const v = [a[0] + nx, a[1], a[2] + nz, a[0] - nx, a[1], a[2] - nz, b[0] + nx, b[1], b[2] + nz, b[0] - nx, b[1], b[2] - nz]; P.set(v, q * 12);
+        for (let j = 0; j < 4; j++) C.set([...col, 0.55], q * 16 + j * 4); }
+      S.g.attributes.position.needsUpdate = true; S.g.attributes.color.needsUpdate = true; }
+    S.last.set(r, cur);
+  }
   racerFx(r, mesh, dt, t) {
     if (!mesh) return;
     const c = Math.cos(r.heading), s = Math.sin(r.heading);
+    this.skid(r, dt);
+    // v3.5 sparks when scraping along walls, dust / grass bits kicked up by the rear wheels
+    if (r.scrapeT > 0 && r.speed > 25 && Math.random() < 0.9) for (let k = 0; k < 3; k++) this.spawn(r.x + c * 5 + rnd(-3, 3), r.y + 2, r.z + s * 5 + rnd(-3, 3), { color: Math.random() < 0.5 ? 0xffd166 : 0xfff3b0, size: rnd(1.2, 2.2), life: rnd(0.2, 0.4), vx: rnd(-60, 60) - r.vx * 0.3, vz: rnd(-60, 60) - r.vz * 0.3, vy: rnd(20, 70), grav: 260 });
+    if (r.type === 'car' && r.grounded && r.speed > 45 && Math.random() < (r.surface === 'grass' ? 0.55 : r.surface === 'tile' ? 0.08 : 0.3)) {
+      const grassy = r.surface === 'grass'; this.spawn(r.x - c * 6 + rnd(-2, 2), r.y + 1, r.z - s * 6 + rnd(-2, 2), { color: grassy ? (Math.random() < 0.5 ? 0x5c8f2f : 0x8a6a42) : 0xd8ccb4, add: false, alpha: grassy ? 0.7 : 0.35, size: grassy ? 1.6 : 3, grow: grassy ? 0 : 2.2, life: grassy ? 0.5 : 0.7, vx: -c * 30 + rnd(-10, 10), vz: -s * 30 + rnd(-10, 10), vy: rnd(15, 40), grav: grassy ? 200 : 20, drag: 1 }); }
     let a = this.att.get(mesh); if (!a) { a = {}; this.att.set(mesh, a); }
     // sticky bomb riding on the racer
     if (r.bomb) {

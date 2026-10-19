@@ -38,7 +38,12 @@ html,body{margin:0;height:100%;overflow:hidden;background:#111;font-family:"Rubi
 .cross:after{top:50%;left:18px;right:18px;width:auto;height:2px;bottom:auto;transform:translateY(-50%)}
 .knob{position:absolute;left:50%;top:50%;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#e9ecef,#868e96 60%,#495057);border:3px solid #212529;box-shadow:0 4px 6px rgba(0,0,0,.6);transform:translate(var(--kx),var(--ky));transition:transform .05s}
 .knob:after{content:"";position:absolute;inset:8px;border-radius:50%;background:repeating-conic-gradient(#adb5bd 0 10deg,#6c757d 10deg 20deg);opacity:.6}
-#countdown{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;font-size:110px;font-weight:900;color:#ffd23f;text-shadow:0 6px 0 #1d3557,0 0 30px #000;z-index:8;pointer-events:none}
+#countdown{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:8;pointer-events:none}
+#countdown .cd{font:900 clamp(110px,34vh,190px)/1 'Arial Black',Impact,system-ui,sans-serif;letter-spacing:4px;color:#ff2d2d;-webkit-text-stroke:6px #ffe14d;paint-order:stroke fill;text-shadow:0 8px 0 #8a0f12,0 14px 24px rgba(0,0,0,.6);animation:cdpop .9s cubic-bezier(.2,1.6,.4,1) both;transform-origin:50% 60%}
+#countdown .cd.go{color:#ff2d2d;font-size:clamp(130px,42vh,230px);animation:gopop .9s cubic-bezier(.2,1.8,.4,1) both}
+#countdown .cd.n3,#countdown .cd.n2,#countdown .cd.n1{color:#fff;-webkit-text-stroke-color:#ff2d2d;text-shadow:0 8px 0 #8a0f12,0 14px 24px rgba(0,0,0,.6)}
+@keyframes cdpop{0%{transform:scale(2.4);opacity:0}35%{transform:scale(.92);opacity:1}55%{transform:scale(1.05)}100%{transform:scale(1);opacity:.95}}
+@keyframes gopop{0%{transform:scale(.2) rotate(-8deg);opacity:0}40%{transform:scale(1.15) rotate(2deg);opacity:1}70%{transform:scale(1)}100%{transform:scale(1.06);opacity:1}}
 .overlay{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,rgba(13,27,42,.55),rgba(13,27,42,.82));overflow:auto}
 .menuBox{width:min(96vw,860px);max-height:100vh;padding:8px 10px}
 .menuHead{text-align:center;margin-bottom:6px}
@@ -118,3 +123,13 @@ button.link{background:none;border:none;color:#bde0fe;text-decoration:underline;
 /* v3.3: weapon slot sits directly above JUMP (same column, 14px gap); bolt-gear crate icon */
 #wicon .boltgear{width:44px;height:44px;display:block;margin:2px auto}
 #wname{max-width:88px}
+
+/* v3.5 speedometer: arc gauge + digital readout */
+#hudBat{min-width:92px;padding:2px 8px 4px;text-align:center;flex-direction:column;gap:0}
+#hudBat .gauge{display:block;width:84px;height:48px;margin:0 auto -18px}
+#hudBat .gTrack{fill:none;stroke:rgba(255,255,255,.18);stroke-width:8;stroke-linecap:round}
+#hudBat .gArc{fill:none;stroke:#ffd23f;stroke-width:8;stroke-linecap:round;stroke-dasharray:100;stroke-dashoffset:100;transition:stroke-dashoffset .12s linear,stroke .2s}
+#hudBat.turbo .gArc{stroke:#4cc9f0;filter:drop-shadow(0 0 4px #4cc9f0)}
+#hudBat .gRead{position:relative;line-height:1}
+#hudBat #spd{font-size:20px;font-weight:800}
+#hudBat small{display:block;font-size:9px;opacity:.75}

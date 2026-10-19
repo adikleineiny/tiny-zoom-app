@@ -121,6 +121,7 @@ export class Track {
     this.buildFeatures();
     for (const p of this.pads) p.y = this.groundAt(p.x, p.z);
     for (let i = 0; i < N; i++) this.surface[i] = this.surfaceAt(this.px[i], this.pz[i], i);
+    this.buildSlowZones();
     // lateral margin a flying drone gets (0 near gates & in tight sections: table, pet door, tunnel, toy-town alleys)
     const SM = CONFIG.sectionFlyMargin || {};
     for (let i = 0; i < N; i++) {
@@ -197,6 +198,30 @@ export class Track {
     for (const f of this.puddles) { const dx = x - f.x, dz = z - f.z; const u = (dx * f.c + dz * f.sn) / (f.len / 2), v = (-dx * f.sn + dz * f.c) / (f.w / 2); if (u * u * u * u + v * v * v * v < 1) return f; }
     return null;
   }
+  // v3.5 slow zones: every contiguous stretch of grass / mud / puddle along the racing line. Each one gets
+  //  - turbo pads (≥ 1 per 800 cm, auto-added into the biggest gap) – flyers get the matching ring above each pad,
+  //  - a visible wind-gust area for flyers whose slow factor = CONFIG.surfaces[surface].drone.speed.
+  buildSlowZones() {
+    const N = this.N, SL = CONFIG.slowZones || { padEvery: 800, minLen: 40 }; this.zones = []; let cur = null;
+    for (let i = 0; i < N; i++) { const sf = this.surface[i], slow = sf === 'grass' || sf === 'water';
+      if (slow && cur && cur.surface === sf && cur.i1 === i - 1) cur.i1 = i; else if (slow) { cur = { surface: sf, i0: i, i1: i }; this.zones.push(cur); } else cur = null; }
+    this.zones = this.zones.filter(z => (z.i1 - z.i0 + 1) * this.ds >= SL.minLen);
+    this.gust = new Float32Array(N).fill(1);
+    for (const z of this.zones) {
+      z.len = (z.i1 - z.i0 + 1) * this.ds; z.factor = CONFIG.surfaces[z.surface].drone.speed;
+      for (let i = z.i0; i <= z.i1; i++) this.gust[i] = z.factor;
+      const want = Math.max(1, Math.ceil(z.len / SL.padEvery));
+      let inZ = this.pads.filter(p => p.i >= z.i0 && p.i <= z.i1);
+      while (inZ.length < want) { // biggest gap between zone edges and existing pads
+        const cuts = [z.i0, ...inZ.map(p => p.i).sort((a, b) => a - b), z.i1]; let bi = 0, bg = -1;
+        for (let k = 0; k < cuts.length - 1; k++) if (cuts[k + 1] - cuts[k] > bg) { bg = cuts[k + 1] - cuts[k]; bi = k; }
+        const i = Math.round((cuts[bi] + cuts[bi + 1]) / 2), pad = { i, s: this.s[i], x: this.px[i], z: this.pz[i], dir: Math.atan2(this.tz[i], this.tx[i]), why: 'slow zone (' + z.surface + ')', y: this.groundAt(this.px[i], this.pz[i]), auto: true };
+        this.pads.push(pad); inZ.push(pad);
+      }
+      z.pads = inZ.length;
+    }
+    this.pads.sort((a, b) => a.s - b.s);
+  }
   surfaceAt(x, z, idx) {
     if (this.inPuddle(x, z)) return 'water';
     if (z < 903) return 'tile';
@@ -244,6 +269,9 @@ export class Track {
       return blur(arr, 20, 2);
     };
     this.carLine = mk('car'); this.droneLine = mk('drone');
+    // rings above auto-added slow-zone pads sit on the flyer racing line (lateral shift toward droneLine, kept inside the track)
+    for (const r of this.rings) { const p = this.pads.find(q => q.i === r.i && q.auto); if (!p) continue; const i = r.i, lim = Math.max(0, this.halfW[i] - CONFIG.turboPads.ringR - 2), l = Math.max(-lim, Math.min(lim, this.droneLine[i]));
+      r.x = this.px[i] + this.nx[i] * l; r.z = this.pz[i] + this.nz[i] * l; }
     // narrow openings (pet door, drain pipe, doghouse): everyone lines up dead centre
     for (const g of this.gates) if (g.door || g.tunnel || g.kennel) for (let k = -32; k <= 32; k++) {
       const i = (g.i + k + N) % N, w = Math.abs(k) <= 12 ? 1 : 0.5 + 0.5 * Math.cos(Math.PI * (Math.abs(k) - 12) / 20);

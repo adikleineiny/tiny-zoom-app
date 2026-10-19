@@ -10,9 +10,28 @@ function blobTex() {
   g.fillStyle = gr; g.fillRect(0, 0, 64, 64); shadowTex = new THREE.CanvasTexture(c); return shadowTex;
 }
 
-const plastic = (c, shin = 70) => new THREE.MeshPhongMaterial({ color: c, shininess: shin, specular: 0x555555 });
-const glassM = () => new THREE.MeshPhongMaterial({ color: 0x1b2a3a, shininess: 120, specular: 0xaaaaaa });
-const basic = c => new THREE.MeshBasicMaterial({ color: c });
+// v3.5 PBR materials: environment-reflective plastics, clear-coated glossy paint (shin ≥ 90), tinted glass
+const MAT = new Map(), RIM = new Map();
+const plastic = (c, shin = 70) => {
+  const key = c + ':' + shin; if (MAT.has(key)) return MAT.get(key);
+  const rough = Math.max(0.12, Math.min(0.95, 1 - shin / 130));
+  const m = shin >= 90 ? new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.38, metalness: 0.0, clearcoat: 1, clearcoatRoughness: 0.06, envMapIntensity: 0.7 })
+    : new THREE.MeshStandardMaterial({ color: c, roughness: rough, metalness: shin >= 110 ? 0.6 : 0.05, envMapIntensity: 0.8 });
+  MAT.set(key, m); return m;
+};
+const glassM = () => plastic.glass || (plastic.glass = new THREE.MeshPhysicalMaterial({ color: 0x0e1822, roughness: 0.03, metalness: 0.2, clearcoat: 1, envMapIntensity: 1.8, transparent: true, opacity: 0.82 }));
+// procedural tyre tread (sidewall lettering-free, original pattern)
+const TREAD = (() => { const c = document.createElement('canvas'); c.width = 128; c.height = 32; const g = c.getContext('2d'); g.fillStyle = '#1a1a1a'; g.fillRect(0, 0, 128, 32);
+  g.fillStyle = '#2c2c2c'; for (let k = 0; k < 16; k++) { g.beginPath(); g.moveTo(k * 8, 4); g.lineTo(k * 8 + 5, 16); g.lineTo(k * 8, 28); g.lineTo(k * 8 + 3, 28); g.lineTo(k * 8 + 8, 16); g.lineTo(k * 8 + 3, 4); g.fill(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; return t; })();
+// race-number door decal (white roundel + number)
+let raceNo = 0;
+function numberTex(n, color) { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.beginPath(); g.arc(32, 32, 29, 0, 7); g.fill(); g.lineWidth = 5; g.strokeStyle = '#111'; g.stroke();
+  g.fillStyle = '#111'; g.font = "900 36px 'Arial Black', Arial, sans-serif"; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(n), 32, 35);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; }
+// lights: head/indicator lamps are HDR-bright (>1) so they bloom on High/Ultra
+const basic = c => { const m = new THREE.MeshBasicMaterial({ color: c }); if (c === 0xfff6b0 || c === 0x00ff88) m.color.multiplyScalar(2.2); m.userData.led = c === 0x00ff88; return m; };
 // Extrude a side profile (x = length, y = height) across the car width (z).
 function sideBody(pts, width, mat, bevel = 0.7) {
   const sh = new THREE.Shape(); sh.moveTo(pts[0][0], pts[0][1]); for (let k = 1; k < pts.length; k++) sh.lineTo(pts[k][0], pts[k][1]); sh.closePath();
@@ -26,12 +45,12 @@ const tube = (a, b, r, mat, parent) => { // cylinder between two points
   const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, L, 6), mat); m.position.copy(A).add(B).multiplyScalar(0.5);
   m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize()); parent.add(m); return m;
 };
-const tyreM = plastic(0x1c1c1c, 10);
+const tyreM = new THREE.MeshStandardMaterial({ color: 0xffffff, map: TREAD, roughness: 0.92, metalness: 0 });
 function makeWheel(R, W, rimColor, knobby) {
   const g = new THREE.Group();
   g.add(new THREE.Mesh(new THREE.CylinderGeometry(R, R, W, knobby ? 10 : 18).rotateX(Math.PI / 2), tyreM));
   if (knobby) for (let k = 0; k < 10; k++) { const a = k / 10 * Math.PI * 2 + 0.31; const kn = new THREE.Mesh(new THREE.BoxGeometry(R * 0.32, R * 0.22, W * 0.9), tyreM); kn.position.set(Math.cos(a) * R, Math.sin(a) * R, 0); kn.rotation.z = a; g.add(kn); }
-  const rimM = plastic(rimColor, 90);
+  const rimM = RIM.get(rimColor) || RIM.set(rimColor, new THREE.MeshPhysicalMaterial({ color: rimColor, metalness: 0.85, roughness: 0.22, clearcoat: 0.6, envMapIntensity: 1.3 })).get(rimColor);
   g.add(new THREE.Mesh(new THREE.CylinderGeometry(R * 0.6, R * 0.6, W + 0.12, 14).rotateX(Math.PI / 2), rimM));
   const spokeM = plastic(0x333333, 40);
   for (const sz of [-1, 1]) for (let k = 0; k < 3; k++) { const sp = new THREE.Mesh(new THREE.BoxGeometry(R * 1.1, R * 0.16, 0.25), spokeM); sp.position.z = sz * (W / 2 + 0.12); sp.rotation.z = k * Math.PI / 3; g.add(sp); }
@@ -132,6 +151,11 @@ function buildCarBody(model, color, body) {
     for (const z of [-2.8, 2.8]) bx(0.6, 2.2, 0.5, dark, -6.8, 5.4, z, body);
     for (const z of [-2.9, 2.9]) { bx(0.3, 0.7, 1.6, head, 8.65, 2.8, z, body); bx(0.3, 0.6, 1.4, tail, -7.9, 3.6, z, body); }
     bx(1.2, 0.6, 7.8, dark, 8.3, 1.6, 0, body); // splitter
+    // v3.5 livery: number roundels on both doors, contrasting racing stripes over bonnet + roof, rear diffuser fins
+    const no = new THREE.MeshBasicMaterial({ map: numberTex(++raceNo % 99 || 7), transparent: true });
+    for (const z of [-4.42, 4.42]) { const d = new THREE.Mesh(new THREE.CircleGeometry(1.35, 20), no); d.position.set(-0.6, 3.25, z); if (z < 0) d.rotation.y = Math.PI; body.add(d); }
+    for (const z of [-0.9, 0.9]) { const st = bx(5.6, 0.1, 0.55, white, 5.4, 3.75, z, body); st.rotation.z = -0.14; }
+    for (const z of [-2.4, 0, 2.4]) bx(1.6, 0.9, 0.2, dark, -7.6, 1.9, z, body);
   } else if (model === 'buggy') {
     body.add(sideBody([[-6.0, 2.2], [6.2, 2.2], [8.4, 3.2], [5.6, 4.4], [-4.0, 4.5], [-6.4, 3.9]], 6.2, paint));
     const cage = plastic(0x2b2d42, 40);
@@ -203,6 +227,25 @@ export function createVehicleMesh(type, color, name, model) {
     const ledF = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.6, 3), new THREE.MeshBasicMaterial({ color: 0x00ff88 })); ledF.position.set(3.1, 3, 0); tilt.add(ledF);
     const ledB = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.6, 3), new THREE.MeshBasicMaterial({ color: 0xff2244 })); ledB.position.set(-3.1, 3, 0); tilt.add(ledB);
   }
+  // ---- v3.5 detail + animation hooks ----
+  if (type === 'car' && !parts.G.two) { // visible suspension A-arms + track rods from the chassis to every wheel hub
+    const armM = plastic(0x2b2d42, 40), G = parts.G;
+    for (const pv of parts.pivots) { const x = pv.position.x, z = pv.position.z, y = G.wr;
+      tube([x * 0.7, y + 0.6, z * 0.3], [x, y, z * 0.82], 0.28, armM, flip); tube([x * 0.95, y - 0.5, z * 0.3], [x, y - 0.2, z * 0.82], 0.22, armM, flip); }
+  }
+  // brake / tail lights: one shared material per vehicle, brightened while braking or reversing
+  parts.brakeM = new THREE.MeshBasicMaterial({ color: 0x7a1218 });
+  root.traverse(o => { if (o.isMesh && o.material && o.material.isMeshBasicMaterial && (o.material.color.getHex() === 0xff2a3a || o.material.color.getHex() === 0xff2244) && !o.material.map) o.material = parts.brakeM; });
+  // exhaust / turbo flame (additive cone pointing backwards)
+  { const fl = new THREE.Mesh(new THREE.ConeGeometry(1.1, 5, 10, 1, true), new THREE.MeshBasicMaterial({ color: 0x66ccff, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }));
+    fl.rotation.z = Math.PI / 2; const core = new THREE.Mesh(new THREE.ConeGeometry(0.55, 3, 8, 1, true), new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false })); core.position.y = 0.6; fl.add(core);
+    const ex = { racecar: [-10.2, 2.6, 0], buggy: [-8.8, 3.6, 0], moto: [-8.8, 3.9, 1.3], scooter: [-7.6, 2.4, 0], heli: [-15.4, 7.0, 0], drone: [-6.0, 3.0, 0] }[model] || [-9, 3, 0];
+    fl.position.set(...ex); fl.visible = false; tilt.add(fl); parts.flame = fl; }
+  // drone: camera gimbal + blinking LEDs
+  if (model === 'drone') { const gim = new THREE.Group(); gim.position.set(2.6, 1.3, 0); tilt.add(gim); const yoke = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.2, 2.2), plastic(0x222222, 40)); gim.add(yoke); const camb = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.1, 1.3), plastic(0x111111, 100)); camb.position.y = -0.8; gim.add(camb); const lens = new THREE.Mesh(new THREE.CircleGeometry(0.4, 12), new THREE.MeshBasicMaterial({ color: 0x3a7bd5 })); lens.position.set(0.71, -0.8, 0); lens.rotation.y = Math.PI / 2; gim.add(lens); parts.gimbal = gim; }
+  parts.leds = []; tilt.traverse(o => { if (o.isMesh && o.material?.isMeshBasicMaterial && (o.material.userData.led || o.material.color.getHex() === 0x00ff88)) parts.leds.push(o); });
+  parts.discs = []; root.traverse(o => { if (o.isMesh && o.material?.transparent && o.geometry?.type === 'CylinderGeometry' && o.material.opacity < 0.2) parts.discs.push(o); });
+  root.traverse(o => { if (o.isMesh && !o.material.transparent) o.castShadow = true; });
   const sh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: blobTex(), transparent: true, depthWrite: false }));
   sh.rotation.x = -Math.PI / 2; parts.shadow = sh;
   if (name) {
@@ -274,6 +317,13 @@ export function updateVehicleMesh(p, r, dt, t) {
     if (r.stunT > 0) p.tilt.rotation.x += Math.sin(t * 60) * 0.06;
     }
   }
+  // v3.5 animation: brake lights, turbo flame, LED blink, rotor blur discs, gimbal stays level
+  { const braking = r.type === 'car' && r.controllable && (r.input.thr < -0.05 || (r.input.thr < 0.05 && Math.abs(fwd) > 20));
+    p.brakeM.color.setHex(braking || r.type !== 'car' ? 0xff2030 : 0x7a1218); if (braking) p.brakeM.color.multiplyScalar(2.5);
+    p.flame.visible = r.turboT > 0; if (p.flame.visible) { const f = 0.8 + Math.random() * 0.5; p.flame.scale.set(1, f, 1); }
+    for (const l of p.leds) l.visible = Math.sin(t * 9 + r.id) > -0.3;
+    if (p.discs.length) { const sp = r.type === 'car' ? 0 : Math.min(1, r.spool || 0); for (const d of p.discs) d.material.opacity = 0.05 + 0.2 * sp; }
+    if (p.gimbal) p.gimbal.rotation.z = -p.tilt.rotation.z; }
   const alt = r.y - (r.groundY || 0); const sz = ({ moto: 13, scooter: 11, heli: 20, drone: 15 }[p.model] || 16) * (1 + alt / 40);
   p.shadow.scale.set(sz, sz * ({ moto: 0.35, scooter: 0.4, heli: 0.55 }[p.model] || (r.type === 'car' ? 0.7 : 1)), 1); p.shadow.rotation.z = -r.heading; p.shadow.position.set(r.x, (r.groundY || 0) + 0.3, r.z);
   p.shadow.material.opacity = Math.max(0.15, 1 - alt / 90);

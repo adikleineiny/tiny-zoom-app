@@ -5,6 +5,10 @@ import { buildWorld } from './world.js';
 import { Racer, AIDriver, Sim } from './sim.js';
 import { createVehicleMesh, updateVehicleMesh } from './vehicles.js';
 import { Input } from './input.js';
+import { EffectComposer } from './addons/postprocessing/EffectComposer.js';
+import { RenderPass } from './addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from './addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from './addons/postprocessing/OutputPass.js';
 import { Weapons, WEAPONS, WEAPON_KEYS } from './weapons.js';
 import { FX } from './fx.js';
 
@@ -12,12 +16,58 @@ const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const canvas = $('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio || 1, CONFIG.render.maxPixelRatio));
+// v3.5: sRGB output + ACES filmic tone mapping, soft PCF shadows, quality levels with automatic fallback
+const RC = CONFIG.render;
+renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = RC.exposure;
+renderer.shadowMap.enabled = !!RC.shadows; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// Quality presets (v3.5): Low / Medium / High / Ultra, persisted; default mobile = Medium, desktop = High.
+const QUALITY = [
+  { name: 'Low',    dpr: 1,   shadows: false, map: 512,  bloom: false },
+  { name: 'Medium', dpr: 1.5, shadows: true,  map: 1024, bloom: false },
+  { name: 'High',   dpr: 2,   shadows: true,  map: 1024, bloom: true, bloomRes: 0.5 },
+  { name: 'Ultra',  dpr: 2.5, shadows: true,  map: 2048, bloom: true, bloomRes: 1 }];
+const isMobile = /iPhone|iPad|Android|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 0 && Math.min(screen.width, screen.height) < 820);
+const qParam = params.get('quality'), qNames = QUALITY.map(q => q.name.toLowerCase());
+const qStored = (() => { try { return localStorage.getItem('tz.quality'); } catch (_) { return null; } })();
+const qPick = v => { if (v == null) return null; const n = qNames.indexOf(String(v).toLowerCase()); if (n >= 0) return n; const k = parseInt(v, 10); return isFinite(k) ? Math.max(0, Math.min(3, k)) : null; };
+const quality = { level: qPick(qParam) ?? qPick(qStored) ?? (isMobile ? 1 : 2), auto: RC.autoQuality && qParam == null, scale: 1, ema: 16.7, slowT: 0, fastT: 0, changes: 0, frames: 0, sum: 0 };
+let composer = null, bloomPass = null;
+function buildComposer(q) {
+  if (!composer) {
+    const rt = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, samples: 4 });
+    composer = new EffectComposer(renderer, rt); composer.addPass(new RenderPass(scene, camera));
+    bloomPass = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.42, 0.45, 0.86); composer.addPass(bloomPass); composer.addPass(new OutputPass());
+  }
+  bloomPass.resolution.set(innerWidth * (q.bloomRes || 0.5), innerHeight * (q.bloomRes || 0.5));
+}
+function applyQuality() {
+  const q = QUALITY[quality.level]; renderer.setPixelRatio(Math.min(devicePixelRatio || 1, q.dpr) * quality.scale);
+  const sh = q.shadows && !!RC.shadows;
+  const sun = world.sun; if (sun && sun.shadow.mapSize.x !== q.map) { sun.shadow.mapSize.set(q.map, q.map); sun.shadow.map?.dispose(); sun.shadow.map = null; }
+  if (renderer.shadowMap.enabled !== sh) { renderer.shadowMap.enabled = sh; scene.traverse(o => { if (o.material) { for (const m of [].concat(o.material)) m.needsUpdate = true; } }); }
+  if (q.bloom) buildComposer(q);
+  for (const b of document.querySelectorAll('.btnQuality')) b.textContent = '⚙️ Graphics: ' + q.name + (quality.scale < 1 ? ' (auto ' + Math.round(quality.scale * 100) + '%)' : '');
+  if (typeof resize === 'function') resize();
+}
+function setQualityLevel(l, persist) { quality.level = Math.max(0, Math.min(3, l)); quality.scale = 1; if (persist) { try { localStorage.setItem('tz.quality', QUALITY[quality.level].name.toLowerCase()); } catch (_) {} } applyQuality(); }
+function qualityTick(ms) {
+  quality.frames++; quality.sum += ms; quality.ema += (ms - quality.ema) * 0.05;
+  if (!quality.auto || state !== 'race') return;
+  if (quality.ema > RC.targetMs) { quality.slowT += ms; quality.fastT = 0; } else if (quality.ema < RC.upMs) { quality.fastT += ms; quality.slowT = 0; } else quality.slowT = quality.fastT = 0;
+  if (quality.slowT > 2000) { // dynamic resolution first, then a lower preset
+    quality.slowT = 0; quality.ema = 16.7; quality.changes++;
+    if (quality.scale > 0.65) quality.scale = Math.max(0.6, quality.scale * 0.85); else if (quality.level > 0) { quality.level--; quality.scale = 1; }
+    applyQuality();
+  } else if (quality.fastT > 10000 && quality.scale < 1 && quality.changes < 8) { quality.fastT = 0; quality.scale = Math.min(1, quality.scale / 0.85); applyQuality(); }
+}
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, QUALITY[quality.level].dpr));
+renderer.shadowMap.enabled = QUALITY[quality.level].shadows;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(CONFIG.camera.fov, 1, 0.5, 5000);
 const track = new Track();
 const world = buildWorld(scene, track, renderer);
 track.finalize();
+applyQuality();
 const sim = new Sim(track);
 const weapons = new Weapons(sim, track);
 const fx = new FX(scene, sim);
@@ -33,6 +83,7 @@ const typeName = m => `${CONFIG.models[m]?.icon || ''} ${CONFIG.models[m]?.label
 
 let state = 'menu', selected = 'racecar', fovNow = CONFIG.camera.fov, rollIconT = 0, slotShown = '', meshes = [], player = null, countdownT = 0, acc = 0, lastSec = 0, hudT = 0, toastT = 0, finishShownT = -1, timeScale = parseFloat(params.get('speed') || '1');
 const camPos = new THREE.Vector3(350, 30, 100), camLook = new THREE.Vector3();
+let shakeT = 0, shakeAmp = 0, cdShown = '';
 let camHeading = 0, camOverride = null, speedOn = false;
 
 function clearRacers() { for (const m of meshes) { scene.remove(m.root); scene.remove(m.shadow); } meshes = []; fx.clearAtt(); sim.reset(); }
@@ -69,7 +120,7 @@ function startDemo() {
 function toMenu() {
   input.releaseAll(); $('rescueFx').classList.remove('on');
   $('menu').classList.remove('hidden'); $('finish').classList.add('hidden'); $('pause').classList.add('hidden');
-  $('hud').classList.add('hidden'); $('touchLayer').classList.add('hidden'); $('countdown').textContent = ''; $('speedlines').classList.remove('on'); speedOn = false;
+  $('hud').classList.add('hidden'); $('touchLayer').classList.add('hidden'); setCountdown(''); $('speedlines').classList.remove('on'); speedOn = false;
   startDemo();
 }
 
@@ -88,6 +139,7 @@ function goFullscreen() {
 }
 $('btnStart').addEventListener('click', () => { goFullscreen(); startRace(selected); });
 $('btnHelp').addEventListener('click', () => $('help').classList.remove('hidden'));
+for (const id of ['btnQuality', 'btnQuality2']) $(id)?.addEventListener('click', e => { e.preventDefault(); setQualityLevel((quality.level + 1) % 4, true); });
 for (const id of ['btnControls', 'btnControls2']) $(id)?.addEventListener('click', e => { e.preventDefault(); input.cycleMode(); });
 input.setType(input.type);
 $('btnHelpClose').addEventListener('click', () => $('help').classList.add('hidden'));
@@ -178,6 +230,10 @@ const mmBase = document.createElement('canvas'); mmBase.width = MW; mmBase.heigh
 }
 function drawMinimap() {
   mctx.clearRect(0, 0, MW, MH); mctx.drawImage(mmBase, 0, 0);
+  // v3.5: wind-gust zones (subtle pale-blue band along the track)
+  mctx.save(); mctx.strokeStyle = 'rgba(160,220,255,0.45)'; mctx.lineWidth = 6; mctx.lineCap = 'round';
+  for (const z of track.zones || []) { mctx.beginPath(); for (let i = z.i0; i <= z.i1; i += 3) { const X = mmX(track.px[i]), Y = mmZ(track.pz[i]); i === z.i0 ? mctx.moveTo(X, Y) : mctx.lineTo(X, Y); } mctx.stroke(); }
+  mctx.restore();
   const flyer = player && player.type !== 'car';
   if (!flyer) for (const p of track.pads) { mctx.fillStyle = '#ff9f1c'; mctx.fillRect(mmX(p.x) - 2.5, mmZ(p.z) - 2.5, 5, 5); }
   else for (const p of track.rings) { mctx.strokeStyle = '#ff9f1c'; mctx.lineWidth = 2; mctx.beginPath(); mctx.arc(mmX(p.x), mmZ(p.z), 3.5, 0, 7); mctx.stroke(); mctx.strokeStyle = '#3ff6ff'; mctx.lineWidth = 1; mctx.beginPath(); mctx.arc(mmX(p.x), mmZ(p.z), 1.8, 0, 7); mctx.stroke(); }
@@ -197,6 +253,9 @@ function updateSlot(dt) {
 function hudEvents() {
   if (!player) return;
   for (const e of sim.events) {
+    // v3.5 camera shake: hits on me, explosions nearby
+    if (e.type === 'hit' && e.r === player) shake(e.kind === 'bomb' || e.kind === 'rocket' ? 3.2 : 1.6);
+    else if (e.type === 'boom' && Math.hypot(e.x - player.x, e.z - player.z) < 90) shake(2.4 * (1 - Math.hypot(e.x - player.x, e.z - player.z) / 90) + 0.6);
     if (e.type === 'gotWeapon' && e.r === player) toast(`${WEAPONS[e.w].icon} ${WEAPONS[e.w].name} – ${WEAPONS[e.w].tip}`);
     else if (e.type === 'hit' && e.by === player && e.r !== player) toast(`💥 Hit ${e.r.name}!`);
     else if (e.type === 'bombStick' && e.r === player) toast('💣 A sticky bomb is on you – bump someone to pass it!');
@@ -217,7 +276,7 @@ function updateHUD(dt) {
   $('lapNum').textContent = player.finished ? 'Finished!' : `Lap ${lap}/${CONFIG.laps}`;
   $('lapTime').textContent = fmt(player.finished ? player.lapTimes.at(-1) : (state === 'race' ? sim.t - player.lapStart : 0));
   $('totTime').textContent = fmt(player.finished ? player.finishTime : sim.t, 1); $('bestTime').textContent = fmt(player.best);
-  $('spd').textContent = Math.round(player.speed);
+  $('spd').textContent = Math.round(player.speed); { const top = player.type === 'car' ? player.V.topSpeed * 1.6 : 220, f = Math.min(1, player.speed / top); const g = $('gaugeArc'); if (g) g.style.strokeDashoffset = String(100 - f * 100); $('hudBat').classList.toggle('turbo', player.turboT > 0); }
   $('alt').textContent = player.type === 'drone' ? `↕${Math.round(player.y)}` : '';
   const w = $('warn'); let msg = '', ok = false;
   if (player.bomb) msg = `💣 Sticky bomb ${player.bomb.t.toFixed(1)}s – bump someone!`;
@@ -247,20 +306,27 @@ function showFinish() {
 }
 
 // ---------- main loop ----------
-function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+// v3.5: big bold pop-in countdown (each number re-triggers the CSS animation)
+function setCountdown(t) {
+  if (t === cdShown) return; cdShown = t; const el = $('countdown');
+  el.innerHTML = t ? `<span class="cd ${t === 'GO!' ? 'go' : 'n' + t}">${t}</span>` : '';
+  world.setStartLights?.(t === 'GO!' ? 4 : t ? 4 - Number(t) : 0);
+}
+function shake(a, t = 0.45) { shakeAmp = Math.max(shakeAmp * (shakeT > 0 ? 1 : 0), a); shakeT = Math.max(shakeT, t); }
+function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); if (composer) { composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, h); const q = QUALITY[quality.level]; bloomPass.resolution.set(w * (q.bloomRes || 0.5), h * (q.bloomRes || 0.5)); } }
 addEventListener('resize', resize); resize();
 const H = 1 / CONFIG.physicsHz;
 let last = performance.now(), simT = 0;
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000); last = now; simT += dt;
+  const rawMs = now - last; const dt = Math.min(0.05, rawMs / 1000); last = now; simT += dt; if (rawMs > 0 && rawMs < 500) qualityTick(rawMs);
   const paused = state.startsWith('paused');
   if (!paused) {
     if (state === 'countdown') {
       countdownT -= dt; const n = Math.ceil(countdownT);
-      $('countdown').textContent = countdownT > 0.2 ? String(Math.min(3, n)) : 'GO!';
+      setCountdown(countdownT > 0.2 ? String(Math.min(3, n)) : 'GO!');
       if (countdownT <= 0.2 && !sim.running) { sim.running = true; state = 'race'; }
     }
-    if (state === 'race' && countdownT < -0.8) $('countdown').textContent = ''; else if (state === 'race') countdownT -= dt;
+    if (state === 'race' && countdownT < -0.8) setCountdown(''); else if (state === 'race') countdownT -= dt;
     if (player && !player.autopilot && !player.finished) input.read(player.input, { cam: camHeading, heading: player.heading }); else input.read({});
     acc += dt * timeScale; let n = 0;
     while (acc >= H && n < 40) { sim.step(H); acc -= H; n++; }
@@ -278,9 +344,11 @@ function frame(now) {
   world.update(simT, sim.racers);
   if (camOverride) { camera.position.set(...camOverride[0]); camera.lookAt(...camOverride[1]); }
   else updateCamera(dt);
+  if (shakeT > 0 && !camOverride) { shakeT -= dt; const a = shakeAmp * Math.max(0, shakeT) / 0.45; camera.position.x += (Math.random() - 0.5) * a; camera.position.y += (Math.random() - 0.5) * a; camera.position.z += (Math.random() - 0.5) * a; }
+  world.followSun?.(followed());
   const fr = followed(); meshes.forEach((m, k) => { if (m.label) { const r = sim.racers[k]; const d = camera.position.distanceTo(m.root.position); m.label.visible = r !== fr && d > 55; m.label.material.opacity = Math.min(1, (d - 55) / 40); } });
   updateHUD(dt);
-  renderer.render(scene, camera); window.__calls = renderer.info.render.calls;
+  if (QUALITY[quality.level].bloom && composer) composer.render(); else renderer.render(scene, camera); window.__calls = renderer.info.render.calls;
   requestAnimationFrame(frame);
 }
 
@@ -289,7 +357,7 @@ window.__rc = {
   sim, track, CONFIG, scene, get camera() { return camera; }, get calls() { return renderer.info.render.calls; }, get state() { return state; }, get player() { return player; },
   startRace, toMenu, setTimeScale: s => (timeScale = s), weapons, WEAPONS,
   setCam(pos, look) { camOverride = pos ? [pos, look] : null; },
-  input, world, rescue: (r = player, why) => sim.rescue(r, why),
+  input, world, createVehicleMesh, updateVehicleMesh, quality, setQuality(l) { quality.auto = false; setQualityLevel(l); }, QUALITY, frameStats() { const r = { avgMs: quality.frames ? quality.sum / quality.frames : 0, frames: quality.frames, level: quality.level, dpr: renderer.getPixelRatio(), shadows: renderer.shadowMap.enabled, calls: renderer.info.render.calls, tris: renderer.info.render.triangles }; quality.frames = 0; quality.sum = 0; return r; }, rescue: (r = player, why) => sim.rescue(r, why),
   give(w, r = player) { weapons.give(r, w); }, fire(r = player) { return weapons.use(r); },
   // fast headless race simulation (no rendering) for balance testing
   simulateRace(type = 'racecar', maxSeconds = 400, opts = {}) {
