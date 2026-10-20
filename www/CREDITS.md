@@ -1,9 +1,9 @@
 # Credits – Tiny Zoom
 
 ## Game content
-All 3D models (vehicles, house, garden, props), textures, icons, sounds and UI art in Tiny Zoom are **original**:
+Track, house, garden, props, textures, icons, sounds and UI art in Tiny Zoom are **original**:
 built procedurally in code (Three.js geometry + HTML canvas–generated textures) for this project.
-No third-party models, textures or game assets are used. No real-world brands, logos or car trademarks.
+The only third-party assets are the five vehicle models listed below (CC0 / public domain / CC BY 4.0).
 
 ## Software libraries (code, bundled locally – no CDN)
 | Library | Files | License | Source |
@@ -22,8 +22,18 @@ Modifications (both): converted to game scale/orientation, wheels (car) split in
 so they can animate, display cloth and cameras removed (car), mesh simplified (car ≈108k → 43.5k tris), textures re-encoded
 to WebP ≤1K, meshopt-compressed. Paint is recoloured at runtime per racer.
 
-Motorcycle, scooter and drone remain original procedural models: no CC0 / CC-BY-4.0 model of sufficient realism was
-obtainable from a direct-download source (Sketchfab downloads require an API token; Poly Pizza candidates were CC-BY 3.0
-or very low-poly).
+## v3.7 third-party 3D models (Sketchfab, CC BY 4.0 – attribution required)
+
+| Asset (exact title) | Used for | Author | License | Source |
+|---|---|---|---|---|
+| **Motorcycle** | Motorcycle | animanyarty | **CC BY 4.0** (https://creativecommons.org/licenses/by/4.0/) | https://sketchfab.com/3d-models/motorcycle-38404e2077ca4b209cd2f1db30541b94 |
+| **Electric Scooter (Low-poly, game-ready)** | Scooter | Delandi (delandi) | **CC BY 4.0** (https://creativecommons.org/licenses/by/4.0/) | https://sketchfab.com/3d-models/electric-scooter-low-poly-game-ready-e22bffc784b04a93acc83599fa7a81c0 |
+| **Quadcopter drone** | Drone | Annelida | **CC BY 4.0** (https://creativecommons.org/licenses/by/4.0/) | https://sketchfab.com/3d-models/quadcopter-drone-ca8f0f70a1014e77a6777dc248e9bf5a |
+
+Modifications (all three): re-oriented to forward +X, scaled to the existing hitboxes, ground/pivot normalised;
+motorcycle & scooter wheels split at runtime onto spinning (front: steering) pivots; drone propellers re-pivoted
+to spin about their hubs with blur discs, transmissive plastics made opaque; textures re-encoded to WebP ≤1K;
+motorcycle simplified (~98.5k → ~42k tris); meshopt-compressed. Downloaded via the Sketchfab Data API (v3).
+These works are licensed under CC BY 4.0 by their authors; no endorsement by the authors is implied.
 
 Decoder: `vendor/addons/libs/meshopt_decoder.module.js` – meshoptimizer, MIT © Arseny Kapoulkine. GLTFLoader – three.js, MIT.
