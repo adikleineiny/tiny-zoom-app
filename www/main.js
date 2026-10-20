@@ -11,6 +11,7 @@ import { UnrealBloomPass } from './addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from './addons/postprocessing/OutputPass.js';
 import { Weapons, WEAPONS, WEAPON_KEYS } from './weapons.js';
 import { FX } from './fx.js';
+import { preloadModels, setModelsEnabled, GLB } from './models.js';
 
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -41,7 +42,7 @@ function buildComposer(q) {
   bloomPass.resolution.set(innerWidth * (q.bloomRes || 0.5), innerHeight * (q.bloomRes || 0.5));
 }
 function applyQuality() {
-  const q = QUALITY[quality.level]; renderer.setPixelRatio(Math.min(devicePixelRatio || 1, q.dpr) * quality.scale);
+  const q = QUALITY[quality.level]; setModelsEnabled(quality.level > 0 || params.get('models') === '1'); if (params.get('models') === '0') setModelsEnabled(false); renderer.setPixelRatio(Math.min(devicePixelRatio || 1, q.dpr) * quality.scale);
   const sh = q.shadows && !!RC.shadows;
   const sun = world.sun; if (sun && sun.shadow.mapSize.x !== q.map) { sun.shadow.mapSize.set(q.map, q.map); sun.shadow.map?.dispose(); sun.shadow.map = null; }
   if (renderer.shadowMap.enabled !== sh) { renderer.shadowMap.enabled = sh; scene.traverse(o => { if (o.material) { for (const m of [].concat(o.material)) m.needsUpdate = true; } }); }
@@ -139,6 +140,8 @@ function goFullscreen() {
 }
 $('btnStart').addEventListener('click', () => { goFullscreen(); startRace(selected); });
 $('btnHelp').addEventListener('click', () => $('help').classList.remove('hidden'));
+$('btnCredits')?.addEventListener('click', e => { e.preventDefault(); $('credits').classList.remove('hidden'); });
+$('btnCreditsClose')?.addEventListener('click', () => $('credits').classList.add('hidden'));
 for (const id of ['btnQuality', 'btnQuality2']) $(id)?.addEventListener('click', e => { e.preventDefault(); setQualityLevel((quality.level + 1) % 4, true); });
 for (const id of ['btnControls', 'btnControls2']) $(id)?.addEventListener('click', e => { e.preventDefault(); input.cycleMode(); });
 input.setType(input.type);
@@ -357,7 +360,7 @@ window.__rc = {
   sim, track, CONFIG, scene, get camera() { return camera; }, get calls() { return renderer.info.render.calls; }, get state() { return state; }, get player() { return player; },
   startRace, toMenu, setTimeScale: s => (timeScale = s), weapons, WEAPONS,
   setCam(pos, look) { camOverride = pos ? [pos, look] : null; },
-  input, world, createVehicleMesh, updateVehicleMesh, quality, setQuality(l) { quality.auto = false; setQualityLevel(l); }, QUALITY, frameStats() { const r = { avgMs: quality.frames ? quality.sum / quality.frames : 0, frames: quality.frames, level: quality.level, dpr: renderer.getPixelRatio(), shadows: renderer.shadowMap.enabled, calls: renderer.info.render.calls, tris: renderer.info.render.triangles }; quality.frames = 0; quality.sum = 0; return r; }, rescue: (r = player, why) => sim.rescue(r, why),
+  get meshes() { return meshes; }, input, world, GLB, createVehicleMesh, updateVehicleMesh, quality, setQuality(l) { quality.auto = false; setQualityLevel(l); }, QUALITY, frameStats() { const r = { avgMs: quality.frames ? quality.sum / quality.frames : 0, frames: quality.frames, level: quality.level, dpr: renderer.getPixelRatio(), shadows: renderer.shadowMap.enabled, calls: renderer.info.render.calls, tris: renderer.info.render.triangles }; quality.frames = 0; quality.sum = 0; return r; }, rescue: (r = player, why) => sim.rescue(r, why),
   give(w, r = player) { weapons.give(r, w); }, fire(r = player) { return weapons.use(r); },
   // fast headless race simulation (no rendering) for balance testing
   simulateRace(type = 'racecar', maxSeconds = 400, opts = {}) {
@@ -376,5 +379,10 @@ window.__rc = {
 
 startDemo();
 const auto = params.get('autostart');
-if (auto) startRace(normSel(auto), { autopilot: params.get('autopilot') === '1' });
+// v3.6: licensed GLB vehicles load in the background (local files, ~1 MB); demo racers are re-skinned when ready
+const modelsReady = Promise.race([preloadModels(), new Promise(r => setTimeout(r, 6000))]);
+modelsReady.then(() => {
+  if (state === 'menu' && !auto) { for (const m of meshes) { scene.remove(m.root); scene.remove(m.shadow); } spawnMeshes(); }
+  if (auto) startRace(normSel(auto), { autopilot: params.get('autopilot') === '1' });
+});
 requestAnimationFrame(frame);

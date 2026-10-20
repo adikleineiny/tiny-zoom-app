@@ -67,8 +67,8 @@ button.big{display:block;width:100%;margin-top:8px;padding:10px;font:inherit;fon
 button.big:active{transform:translateY(3px);box-shadow:0 1px 0 #9d0208}
 button.big.alt{background:linear-gradient(#4f6d8f,#1d3557);box-shadow:0 4px 0 #0d1b2a}
 button.link{background:none;border:none;color:#bde0fe;text-decoration:underline;font:inherit;font-size:13px;margin-top:6px;cursor:pointer;display:block;margin-inline:auto}
-#help{position:absolute;inset:6% 8%;background:#0d1b2a;border:2px solid #ffd23f;border-radius:16px;padding:10px 18px;font-size:13px;overflow:auto;z-index:2}
-#help h3{margin:4px 0;color:#ffd23f}
+#help,#credits{position:absolute;inset:6% 8%;background:#0d1b2a;border:2px solid #ffd23f;border-radius:16px;padding:10px 18px;font-size:13px;overflow:auto;z-index:2}
+#help h3,#credits h3{margin:4px 0;color:#ffd23f}
 .dialog{background:rgba(13,27,42,.95);border:2px solid #ffd23f;border-radius:18px;padding:12px 22px;min-width:280px;text-align:center;max-height:96vh;overflow:auto}
 .dialog.wide{min-width:min(94vw,640px)}
 .dialog h2{margin:2px 0 8px;color:#ffd23f}

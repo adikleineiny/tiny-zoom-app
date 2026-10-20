@@ -28,12 +28,14 @@ on:
     tags: ["ios-v*"]          # or push a tag like ios-v1.0.1 to build automatically
 
 concurrency:
-  group: ios-testflight
+  group: ios-testflight-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   build-and-upload:
-    runs-on: macos-26         # macOS + Xcode 26 (App Store requires the iOS 26 SDK or newer)
+    # macos-15 (arm64) runners are far more available than macos-26; it ships Xcode 26.x side by side,
+    # which we select below (App Store requires the iOS 26 SDK or newer).
+    runs-on: macos-15
     timeout-minutes: 45
 
     env:
@@ -60,8 +62,13 @@ jobs:
       - name: Copy the web game into the iOS project (cap sync)
         run: npx cap sync ios
 
+      - name: Select Xcode 26 (iOS 26 SDK)
+        run: |
+          X=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          echo "Using $X"; sudo xcode-select -s "$X/Contents/Developer"
+
       - name: Show Xcode version
-        run: xcodebuild -version
+        run: xcodebuild -version && xcodebuild -showsdks | grep -i iphoneos
 
       - name: Save the App Store Connect API key to a file
         env:

@@ -1,5 +1,6 @@
 import * as THREE from './three.module.min.js';
 import { makeLabelTexture } from './world.js';
+import { glbFor, buildGlbCar, buildGlbHeli } from './models.js';
 
 const lam = (c, o = {}) => new THREE.MeshLambertMaterial({ color: c, ...o });
 let shadowTex = null;
@@ -192,18 +193,24 @@ export function createVehicleMesh(type, color, name, model) {
   const parts = { root, flip, tilt, wheels: [], pivots: [], frontPivots: [], rotors: [], type, model, susY: 0, susV: 0, squash: 0, steer: 0, lastFwd: 0, lastHead: null, wasAir: false, pitch: 0, roll: 0 };
   if (type === 'car') {
     const G = CAR_GEO[model] || CAR_GEO.buggy; parts.G = G;
-    if (!G.two) {
+    if (!G.two && glbFor(model)) {
+      buildGlbCar(parts, color, !!name); // AI rivals use the 15k-tri LOD
+      for (const z of [-2.5, 2.5]) { const bl = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.45, 1.1), basic(0xff2a3a)); bl.position.set(-8.45, 2.05, z); tilt.add(bl); }
+    } else if (!G.two) {
       buildCarBody(model || 'racecar', color, tilt);
       const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 7, 4), plastic(0x111111)); ant.position.set(-4.5, (model === 'monster' ? 11 : 7.5), 3); tilt.add(ant);
       const tip = new THREE.Mesh(new THREE.SphereGeometry(0.45, 6, 4), basic(color)); tip.position.set(-4.5, ant.position.y + 3.6, 3); tilt.add(tip);
     }
     const wpos = G.two ? [[G.wx, 0], [-G.wx, 0]] : [[G.wx, G.wz], [G.wx, -G.wz], [-G.wx, G.wz], [-G.wx, -G.wz]];
-    for (const [x, z] of wpos) {
+    if (!parts.glb) for (const [x, z] of wpos) {
       const piv = new THREE.Group(); piv.position.set(x, G.wr, z); flip.add(piv);
       const w = makeWheel(G.wr, G.ww, G.rim, G.knobby); piv.add(w);
       parts.wheels.push(w); parts.pivots.push(piv); if (x > 0) parts.frontPivots.push(piv);
     }
     if (G.two) { buildBike(model, color, parts); parts.frontPivots[0].rotation.z = 0; }
+  } else if (model === 'heli' && glbFor('heli')) {
+    buildGlbHeli(parts, color);
+    { const l1 = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 6), basic(0x00ff88)); l1.position.set(3.2, 2.2, 0); tilt.add(l1); const l2 = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 6), basic(0xff2244)); l2.position.set(-3.2, 2.2, 0); tilt.add(l2); }
   } else if (model === 'heli') {
     buildHeli(color, parts);
   } else {
@@ -228,7 +235,7 @@ export function createVehicleMesh(type, color, name, model) {
     const ledB = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.6, 3), new THREE.MeshBasicMaterial({ color: 0xff2244 })); ledB.position.set(-3.1, 3, 0); tilt.add(ledB);
   }
   // ---- v3.5 detail + animation hooks ----
-  if (type === 'car' && !parts.G.two) { // visible suspension A-arms + track rods from the chassis to every wheel hub
+  if (type === 'car' && !parts.G.two && !parts.glb) { // visible suspension A-arms + track rods from the chassis to every wheel hub
     const armM = plastic(0x2b2d42, 40), G = parts.G;
     for (const pv of parts.pivots) { const x = pv.position.x, z = pv.position.z, y = G.wr;
       tube([x * 0.7, y + 0.6, z * 0.3], [x, y, z * 0.82], 0.28, armM, flip); tube([x * 0.95, y - 0.5, z * 0.3], [x, y - 0.2, z * 0.82], 0.22, armM, flip); }
@@ -239,7 +246,7 @@ export function createVehicleMesh(type, color, name, model) {
   // exhaust / turbo flame (additive cone pointing backwards)
   { const fl = new THREE.Mesh(new THREE.ConeGeometry(1.1, 5, 10, 1, true), new THREE.MeshBasicMaterial({ color: 0x66ccff, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }));
     fl.rotation.z = Math.PI / 2; const core = new THREE.Mesh(new THREE.ConeGeometry(0.55, 3, 8, 1, true), new THREE.MeshBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false })); core.position.y = 0.6; fl.add(core);
-    const ex = { racecar: [-10.2, 2.6, 0], buggy: [-8.8, 3.6, 0], moto: [-8.8, 3.9, 1.3], scooter: [-7.6, 2.4, 0], heli: [-15.4, 7.0, 0], drone: [-6.0, 3.0, 0] }[model] || [-9, 3, 0];
+    const ex = parts.glb && model === 'racecar' ? [-9.6, 1.3, 0] : parts.glb && model === 'heli' ? [-6, 3, 0] : { racecar: [-10.2, 2.6, 0], buggy: [-8.8, 3.6, 0], moto: [-8.8, 3.9, 1.3], scooter: [-7.6, 2.4, 0], heli: [-15.4, 7.0, 0], drone: [-6.0, 3.0, 0] }[model] || [-9, 3, 0];
     fl.position.set(...ex); fl.visible = false; tilt.add(fl); parts.flame = fl; }
   // drone: camera gimbal + blinking LEDs
   if (model === 'drone') { const gim = new THREE.Group(); gim.position.set(2.6, 1.3, 0); tilt.add(gim); const yoke = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.2, 2.2), plastic(0x222222, 40)); gim.add(yoke); const camb = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.1, 1.3), plastic(0x111111, 100)); camb.position.y = -0.8; gim.add(camb); const lens = new THREE.Mesh(new THREE.CircleGeometry(0.4, 12), new THREE.MeshBasicMaterial({ color: 0x3a7bd5 })); lens.position.set(0.71, -0.8, 0); lens.rotation.y = Math.PI / 2; gim.add(lens); parts.gimbal = gim; }
