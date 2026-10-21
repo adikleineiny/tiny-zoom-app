@@ -134,6 +134,9 @@ document.querySelectorAll('.vcard').forEach(b => b.addEventListener('click', () 
   document.querySelectorAll('.vcard').forEach(x => x.classList.remove('sel')); b.classList.add('sel'); selected = b.dataset.type;
 }));
 function goFullscreen() {
+  // Inside the native app (Capacitor) the Fullscreen API makes iOS show a persistent
+  // "is in full screen. Swipe down to exit." banner; the app is already fullscreen.
+  if (window.Capacitor?.isNativePlatform?.() || location.protocol === 'capacitor:') return;
   const el = document.documentElement;
   if (el.requestFullscreen && !document.fullscreenElement && matchMedia('(pointer:coarse)').matches)
     el.requestFullscreen().then(() => screen.orientation?.lock?.('landscape')).catch(() => {});
